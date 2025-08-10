@@ -2,7 +2,7 @@ FROM node:14-alpine
 
 # Create app directory
 WORKDIR /usr/src/app
-ENV NODE_OPTIONS="--max-old-space-size=1400"
+ENV NODE_OPTIONS=--max-old-space-size=1400
 # Install app dependencies
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 # where available (npm@5+)
