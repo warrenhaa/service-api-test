@@ -1,0 +1,57 @@
+paths:
+  /core_permissions_mapping/:                # path of the core permission  mapping from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissionMappings            # Value of the tag
+      summary: creates a new CorePermission Mappings
+      produces:
+      - application/json
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates a core_permissions_mapping
+        required: false   # can also be true depending on core permission  mapping preference
+        schema:           # Schema definition
+          $ref: '#/definitions/core_permissions_mapping' 
+      responses:          # server responses
+        201:
+          description: An object with core permission  mapping details
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissionMappings            # Value of the tag
+      summary: gets all core_permissions_mapping
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of companies
+    delete:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissionMappings            # Value of the tag
+      summary: Deletes a CorePermissionMapping
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      parameters:         # request parameters
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid              
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description:           
+definitions:        # Schema defination for request body
+  core_permissions_mapping:
+    type: object
+    properties:
+      name:
+        type: string

@@ -1,0 +1,110 @@
+paths:
+  /permissions/permissions_invite/:                # path of the user from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Permissions            # Value of the tag
+      summary: creates a new Permission from invite
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name: user_id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid       
+      responses:          # server responses
+        200:
+          description: An array of permissions
+  /permissions/:                # path of the user from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Permissions            # Value of the tag
+      summary: Adds a new Permission to user_id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates permissions for a user
+        required: false   # can also be true depending on user preference
+        schema:           # Schema definition
+          $ref: '#/definitions/body' 
+      responses:          # server responses
+        200:
+          description: An array of permissions          
+  /permissions/{id}:                # path of the user from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Permissions            # Value of the tag
+      summary: get Permission of a user
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+          description: id of the user whose permission needs to be retrieved      
+      responses:          # server responses
+        200:
+          description: An object Permission of a user
+    put:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Permissions            # Value of the tag
+      summary: update one permission
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An object with updated permission as mentioned in the body
+  /permissions/user_locations/:
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Permissions            # Value of the tag
+      summary: get location Permission of a user
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: query          # request body
+        name: user_id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+          description: id of the user whose permission needs to be retrieved      
+      responses:          # server responses
+        200:
+          description: An object Permission of a user
+definitions:        # Schema defination for request body
+  body:
+    type: object
+    properties:
+      user_id:
+        type: string
+        format: uuid
+      permissions:
+        $ref: '#/definitions/permissions'
+  permissions:
+    type: object
+    properties:
+      site_permissions:
+        type: array
+        example: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
+      core_permissions:
+        type: array
+        example: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]

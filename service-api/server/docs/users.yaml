@@ -1,0 +1,121 @@
+paths:
+  /users/:                # path of the user from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Users            # Value of the tag
+      summary: creates a user with cognito id and invite id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates a  user
+        required: false   # can also be true depending on user preference
+        schema:           # Schema definition
+          $ref: '#/definitions/users' 
+      responses:          # server responses
+        201:
+          description: An object with user details
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Users            # Value of the tag
+      summary: gets a user based on cognito_id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+        - accessToken: []     
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An object having user id
+  /users/{id}:
+    delete:
+      tags:               # Tag property
+        - Users            # Value of the tag
+      summary: deletes an user
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: Deletes an user
+  /users/user_companies:
+    get:
+      tags:
+        - Users
+      summary: gets users companies based cognito_id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: Returns a list of companies based on cognito_id
+  /users/company:
+    get:
+      tags:
+        - Users
+      summary: gets users companies based cognito_id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      parameters:         # request parameters
+      - in: query          # request body
+        name: limit   # name of request, can be any name
+        required: false
+        schema:
+          type: number
+      - in: query          # request body
+        name: paginationToken   # name of request, can be any name
+        required: false
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: Returns a list of user based on company_code
+  /users/user_attributes:
+    put:
+      tags:
+        - Users
+      summary: updates users attritbutes in cognito
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      parameters:         # request parameters
+      - in: body          # request body
+        schema:
+          $ref: '#/definitions/user'
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: Returns a list of user based on company_code
+definitions:        # Schema defination for request body
+  users:
+    type: object
+    properties:
+      cognito_id:
+        type: string
+        format: uuid
+      invite_id:
+        type: string
+        format: uuid
+  user:
+    type: object
+    properties:
+      email:
+        type: string
+      attributes:
+        type: array
+        items:
+            type: object
+
+        

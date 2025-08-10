@@ -1,0 +1,27 @@
+paths:
+  /company_verification_status/:                # path of the core permission from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CompanyVerifications            # Value of the tag
+      summary: gets all CompanyVerifications status
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of CompanyVerifications status
+  /company_verification_status/{id}:                # path of the core permission from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CompanyVerifications            # Value of the tag
+      summary: get one CompanyVerifications status based on company_id
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An object with a CompanyVerifications status      

@@ -1,0 +1,14 @@
+paths:
+  /activity_logs/:                # path of the core permission from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - ActivityLogs            # Value of the tag
+      summary: gets all ActivityLogs
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of CompanyVerifications status   

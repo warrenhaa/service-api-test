@@ -1,0 +1,103 @@
+paths:
+  /core_permissions/:                # path of the core permission from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissions            # Value of the tag
+      summary: creates a new core permission
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates a new core permission
+        required: false   # can also be true depending on core permission preference
+        schema:           # Schema definition
+          $ref: '#/definitions/body' 
+      responses:          # server responses
+        201:
+          description: An object with core permission details
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissions            # Value of the tag
+      summary: gets all core permissions
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of core permissions
+    delete:
+      tags:
+        - CorePermissions            # Value of the tag
+      summary: delete a core permission
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: deletes a CorePermission
+  /core_permissions/{id}:                # path of the core permission from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissions            # Value of the tag
+      summary: get one core permission
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An object with a CorePermission
+  /core_permissions/user_locations/:
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - CorePermissions            # Value of the tag
+      summary: get location Permission of a user
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: query          # request body
+        name: user_id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+          description: id of the user whose permission needs to be retrieved      
+      responses:          # server responses
+        200:
+          description: An object Core Permission of a user          
+definitions:        # Schema defination for request body
+  body:
+    type: object
+    properties:
+      user_id:
+        type: string
+        format: uuid
+      permissions:
+        $ref: '#/definitions/permissions'
+  permissions:
+    type: object
+    properties:
+      core_permissions:
+         $ref: '#/definitions/core_permissions'
+      core_permission_mapping_id:
+        type: string
+        format: uuid
+  core_permissions:
+    type: object
+    properties:
+      type: array
+      devices:
+        type: string
+        example: ["update", "read", "delete"]
+

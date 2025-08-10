@@ -1,0 +1,111 @@
+paths:
+  /location_types/:                # path of the user from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - LocationTypes            # Value of the tag
+      summary: creates a new location type
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates a company
+        required: false   # can also be true depending on user preference
+        schema:           # Schema definition
+          $ref: '#/definitions/location_types' 
+      responses:          # server responses
+        200:
+          description: An object with location type details
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - LocationTypes            # Value of the tag
+      summary: gets all location types
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of location types
+  /location_types/{id}:                # path of the user from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - LocationTypes            # Value of the tag
+      summary: get one location type
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+        description: get one location type
+        required: true   # can also be true depending on user preference
+      responses:          # server responses
+        200:
+          description: An object with a location type detail
+    put:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - LocationTypes            # Value of the tag
+      summary: update one location type
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid      
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: It creates a location type
+        required: false   # can also be true depending on user preference
+        schema:           # Schema definition
+          $ref: '#/definitions/location_types' 
+      responses:          # server responses
+        200:
+          description: An object with a location type detail
+    delete:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - LocationTypes            # Value of the tag
+      summary: Deletes a location type      
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      parameters:         # request parameters
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid              
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: 
+definitions:        # Schema defination for request body
+  location_types:
+    type: object
+    properties:
+      name:
+        type: string
+      container_id:
+        type: string
+        format: uuid
+      can_have_devices:
+        type: boolean
+      is_address_applicable:
+        type: boolean
+      is_location_map_applicable:
+        type: boolean

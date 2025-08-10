@@ -1,0 +1,127 @@
+paths:
+  /adresses:                # path of the user from your endpoint
+    post:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Addresses            # Value of the tag
+      summary: creates an address
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      produces:
+      - application/json
+      parameters:         # request parameters
+      - in: body          # request body
+        name:     # name of request, can be any name
+        description: creates an address
+        required: false   # can also be true depending on user preference
+        schema:           # Schema definition
+          $ref: '#/definitions/address' 
+      responses:          # server responses
+        201:
+          description: An object with address
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Addresses            # Value of the tag
+      summary: gets all adresses
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      produces:
+      - application/json
+      responses:          # server responses
+        200:
+          description: An array of companies
+  /adresses/{id}:                # path of the user from your endpoint
+    get:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Addresses            # Value of the tag
+      summary: get one Address
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      produces:
+      - application/json
+      parameters:
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+        description: Gets an address based on the id provided
+        required: true   # can also be true depending on user preference
+      responses:          # server responses
+        200:
+          description: Gets an address object
+    delete:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Addresses            # Value of the tag
+      summary: deletes one Address
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []
+      produces:
+      - application/json
+      
+      responses:          # server responses
+        200:
+          description: Deletes an address object
+    update:                 # endpoint request type (post request)
+      tags:               # Tag property
+        - Addresses            # Value of the tag
+      summary: updates one Address
+      security:
+        - bearerAuth: []   # Use OAuth with a different scope
+        - code: []      
+      produces:
+      - application/json
+      parameters:
+      - in: path          # request body
+        name: id   # name of request, can be any name
+        schema:
+          type: string
+          format: uuid
+      - in: body
+        schema:
+          $ref: '#/definitions/companies' 
+        description: Updates an address based on the id provided
+        required: true   # can also be true depending on user preference      
+      responses:          # server responses
+        200:
+          description: Returns an updated address object
+    put:                 
+      tags:               
+        - Addresses            
+      summary: update one Address
+      produces:
+      - application/json
+      security:
+        - bearerAuth: []   
+        - code: []      
+      parameters:         
+      - in: body          
+        description: It creates a address
+        required: false  
+        schema:           
+          $ref: '#/definitions/address' 
+      responses:          
+        200:
+          description: An object with a address detail              
+definitions:        # Schema defination for request body
+  address:
+    properties:
+      line_1:
+        type: string
+      line_2:
+        type: string
+      line_3:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      country:
+        type: string
+      zip_code:
+        type: string
+      geo_location:
+        type: object

@@ -1,0 +1,141 @@
+paths:
+  /companies:              
+    post:                
+      tags:              
+        - Companies           
+      summary: creates a new company
+      security:
+        - bearerAuth: []  
+        - code: []
+      produces:
+      - application/json
+      parameters:        
+      - in: body         
+        name:    
+        description: It creates a company
+        required: false  
+        schema:          
+          $ref: '#/definitions/companies' 
+      responses:         
+        200:
+          description: An object with company details
+    get:                
+      tags:               
+        - Companies            
+      summary: gets all company
+      security:
+        - bearerAuth: []   
+        - code: []      
+      produces:
+      - application/json
+      responses:         
+        200:
+          description: An array of companies
+  /companies/{id}:                
+    get:                 
+      tags:               
+        - Companies            
+      summary: get one company
+      security:
+        - bearerAuth: []   
+        - code: []      
+      produces:
+      - application/json
+      responses:          
+        200:
+          description: An object with a company detail
+    put:                 
+      tags:               
+        - Companies            
+      summary: update one company
+      produces:
+      - application/json
+      security:
+        - bearerAuth: []   
+        - code: []      
+      parameters:         
+      - in: body          
+        description: It creates a company
+        required: false  
+        schema:           
+          $ref: '#/definitions/companies' 
+      responses:          
+        200:
+          description: An object with a company detail
+    delete:                
+      tags:               
+        - Companies            
+      summary: Deletes a company
+      security:
+        - bearerAuth: []   
+        - code: []      
+      produces:
+      - application/json
+      responses:          
+        200:
+          description: 
+definitions:        
+  companies:
+    type: object
+    properties:
+      name:
+        type: string
+        example: Salus
+      code:
+        type: string
+        example: salus
+      aws_cognito_id:
+        type: string
+      aws_cognito_identity_pool:
+        type: string
+      aws_cognito_region:
+        type: string
+      aws_cognito_company_pool:
+        type: string
+      aws_cognito_companypool_web_client_id:
+        type: string
+      aws_iam_access_key:
+        type: string
+      aws_iam_access_secret:
+        type: string
+      aws_iot_end_point:
+        type: string
+      aws_region:
+        type: string
+      aws_s3_bucket_name:
+        type: string
+      aws_topics_to_subscribe:
+        type: string
+      device_to_company_list:
+        type: string
+      es_endpoint:
+        type: string
+      es_password:
+        type: string
+      es_companyname:
+        type: string
+      index_name:
+        type: string
+      company_to_device_list:
+        type: string
+      line_1:
+        type: string
+      line_2:
+        type: string
+      line_3:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      country:
+        type: string
+      zip_code:
+        type: string
+      geo_location:
+        type: object
+        properties:
+          lat:
+            type:string
+          long:
+            type:string    
