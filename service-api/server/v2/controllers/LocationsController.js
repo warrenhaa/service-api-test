@@ -30,6 +30,7 @@ class LocationsController {
     const addressDetails = await AddressesService.createAddress(req.body, req);
     req.body.address_id = addressDetails.id;
     req.body.user_id = req.user_id;
+    req.body.source_IP = req.source_IP;
     const location = await LocationsService.createLocations(req.body).then(
       async (result) => {
         const locationTypes = await LocationTypesService.getLocationType(
@@ -145,6 +146,7 @@ class LocationsController {
       req.body,
       id,
       req.user_id,
+      req.source_IP,
     );
     if (locationUpdated) {
       util.setSuccess(200, locationUpdated);

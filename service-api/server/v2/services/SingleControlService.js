@@ -44,7 +44,7 @@ class SingleControlsService {
     return getSingleControl;
   }
 
-  static async getGatewaySingleControls(gateway_id, networkwifimac, occupant_id, gateway_code) {
+  static async getGatewaySingleControls(gateway_id, networkwifimac, occupant_id, gateway_code, isAdmin = false) {
     let where = {};
     let deviceInclude = [
       {
@@ -187,7 +187,7 @@ class SingleControlsService {
     }
   }
 
-  static async addSingleControl(name, deviceList, default_device_id, gateway_id, company_id, user_id, occupant_id) {
+  static async addSingleControl(name, deviceList, default_device_id, gateway_id, company_id, user_id, occupant_id, source_IP) {
     // check valid gateway_id
     const gatewayExist = await database.devices.findOne({
       where: { id: gateway_id },
@@ -248,7 +248,7 @@ class SingleControlsService {
       if (deviceList.length > 0) {
         // add single control devices
         await this.addSingleControlDevices(addSingleGroup.id, deviceList, occupant_id,
-          company_id, gateway_id)
+          company_id, gateway_id, source_IP)
           .catch((err) => {
             throw err;
           });
@@ -258,14 +258,14 @@ class SingleControlsService {
           devices.splice(index, 1);
         }
         // whenever we create single control device ,we need to duplicate the schedules of default device to the other device list
-        await SchedulesService.updateDuplicateSchedules(default_device_id, devices, user_id, occupant_id, company_id, "single_control")
+        await SchedulesService.updateDuplicateSchedules(default_device_id, devices, user_id, occupant_id, company_id, "single_control", source_IP)
           .catch((err) => {
             throw err;
           });
       }
 
       ActivityLogs.addActivityLog(Entities.single_controls.entity_name, Entities.single_controls.event_name.added,
-        Obj, Entities.notes.event_name.added, addSingleGroup.id, company_id, user_id, occupant_id, null);
+        Obj, Entities.notes.event_name.added, addSingleGroup.id, company_id, user_id, occupant_id, null, source_IP);
     }
     // creating reference in device rule_reference
     const deviceReferenceObj = await OneTouchRulesService.addDeviceReference(gateway_id);
@@ -285,7 +285,7 @@ class SingleControlsService {
     return singleControl;
   }
 
-  static async addSingleControlDevices(singleControlId, deviceList, occupantId, companyId, gatewayId) {
+  static async addSingleControlDevices(singleControlId, deviceList, occupantId, companyId, gatewayId, source_IP) {
     const checkSingleControl = await this.getSingleControl(singleControlId, companyId)
       .catch((err) => {
         throw err;
@@ -381,7 +381,7 @@ class SingleControlsService {
             ActivityLogs.addActivityLog(Entities.single_control_devices.entity_name,
               Entities.single_control_devices.event_name.added,
               Obj, Entities.notes.event_name.added, occupantId,
-              companyId, null, occupantId, null);
+              companyId, null, occupantId, null, source_IP);
           }
         }
       } else {
@@ -395,7 +395,7 @@ class SingleControlsService {
     return singleControl;
   }
 
-  static async updateSingleControl(id, name, deviceList, default_device_id, gateway_id, company_id, user_id, occupant_id) {
+  static async updateSingleControl(id, name, deviceList, default_device_id, gateway_id, company_id, user_id, occupant_id, source_IP) {
     const oldObj = {};
     const newObj = {};
     const gatewayExist = await database.devices.findOne({
@@ -427,7 +427,7 @@ class SingleControlsService {
       const defaultDeviceExists = await database.devices.findOne({
         where: {
           id: default_device_id,
-          gateway_id
+          gateway_id,
         },
       }).catch(() => {
         const err = ErrorCodes['800019']; // device not found
@@ -463,7 +463,7 @@ class SingleControlsService {
       };
       ActivityLogs.addActivityLog(Entities.single_controls.entity_name,
         Entities.single_controls.event_name.updated,
-        obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, null);
+        obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, null, source_IP);
     }
 
     if (deviceList && deviceList.length > 0) {
@@ -489,7 +489,7 @@ class SingleControlsService {
         devices.splice(index, 1);
       }
       // whenever we create single control device, we need to duplicate the schedules of default device to the other device list
-      await SchedulesService.updateDuplicateSchedules(default_device_id, devices, user_id, occupant_id, company_id, "single_control")
+      await SchedulesService.updateDuplicateSchedules(default_device_id, devices, user_id, occupant_id, company_id, "single_control", source_IP)
         .catch((err) => {
           throw err;
         });
@@ -512,7 +512,7 @@ class SingleControlsService {
     return singleControl;
   }
 
-  static async deleteSingleControl(id, company_id, user_id, occupant_id) {
+  static async deleteSingleControl(id, company_id, user_id, occupant_id, source_IP) {
     const singleControls = await database.single_controls.findOne({
       where: { id, company_id },
     });
@@ -551,7 +551,7 @@ class SingleControlsService {
     for (const iterator of singleControlDevices) {
       if (singleControls.default_device_id != iterator) {
         const isToPublish = true;
-        promiseList.push(await SchedulesService.deleteAllSchedules(iterator, company_id, user_id, occupant_id, isToPublish));
+        promiseList.push(await SchedulesService.deleteAllSchedules(iterator, company_id, user_id, occupant_id, isToPublish, source_IP));
       }
     }
     await Promise.all(promiseList).then((result) => result).catch((err) => {
@@ -588,7 +588,7 @@ class SingleControlsService {
     await OneTouchRulesService.publishJsonUrl(company_id, gatewayExist.device_code, url);
 
     ActivityLogs.addActivityLog(Entities.single_controls.entity_name, Entities.single_controls.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, singleControls.gateway_id, company_id, user_id, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, singleControls.gateway_id, company_id, user_id, occupant_id, null, source_IP);
     return {
       message: 'Single control deleted successfully',
     };

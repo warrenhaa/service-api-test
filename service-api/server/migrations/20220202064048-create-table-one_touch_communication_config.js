@@ -53,7 +53,7 @@ module.exports = {
       },
     });
     await queryInterface.addIndex('one_touch_communication_config', ['rule_trigger_key', 'emails', 'phone_numbers']);
-    await queryInterface.addConstraint('one_touch_communication_config', ['rule_trigger_key'], { type: 'unique', name: 'rule_trigger_key-unique' });
+    await queryInterface.addConstraint('one_touch_communication_config',  { fields:['rule_trigger_key'], type: 'unique', name: 'rule_trigger_key-unique' });
   },
 
   down: async (queryInterface) => {

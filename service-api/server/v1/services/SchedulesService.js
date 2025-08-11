@@ -11,8 +11,39 @@ const uuid = require('uuid').v4;
 const lodash = require('lodash');
 const moment = require('moment');
 const { Op } = database.Sequelize;
-
+const constantFromConfigs = require('../../cache/constantFromConfigs')
 class SchedulesService {
+
+  static async getSystemMode(company_id, device_code) {
+    var params = {
+      thingName: device_code, /* required */
+    };
+    const shadowData = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'getThingShadow').then((data) => data);
+    if (!shadowData) {
+      // gateway shadow not updated
+      const err = ErrorCodes['410006'];
+      throw err;
+    }
+    var payload = JSON.parse(shadowData.payload);
+    let base_key = null;
+    const { reported } = payload.state; // array
+    let base = null;
+    let systemModeValue = null
+    Object.keys(reported).forEach((key) => {
+      if (reported[key].hasOwnProperty('properties')) {
+        const { properties } = reported[key];
+        base_key = key;
+        if (Object.keys(properties).length > 0) {
+          let alertProperty = Object.keys(properties).filter((name) => name.endsWith(":SystemMode"));
+          systemModeValue = properties[alertProperty[0]];
+
+          base = Object.keys(properties)[0];
+        }
+      }
+    });
+
+    return systemModeValue;
+  }
   static async publishGenScheURL(company_id, device_code, url) {
     var params = {
       thingName: device_code, /* required */
@@ -89,7 +120,7 @@ class SchedulesService {
     return deleteSchedules; // null
   }
 
-  static async createSchedulesData(schedule, device_id, deviceCode, company_id, user_id, occupant_id) {
+  static async createSchedulesData(schedule, device_id, deviceCode, company_id, user_id, occupant_id, source_IP) {
     const to_device_id = device_id;
     const device_code = deviceCode;
     const create = await database.schedules.create({
@@ -108,7 +139,7 @@ class SchedulesService {
       new: create,
     };
     ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.added,
-      obj, Entities.notes.event_name.added, create.id, company_id, user_id, occupant_id, null);
+      obj, Entities.notes.event_name.added, create.id, company_id, user_id, occupant_id, null, source_IP);
 
     return create;
   }
@@ -170,7 +201,7 @@ class SchedulesService {
     return {};
   }
 
-  static async getAllSchedules(device_id, company_id, occupant_id, user_id, device_code) {
+  static async getAllSchedules(device_id, company_id, occupant_id, user_id, device_code, isAdmin = false) {
     let where = {};
     if (device_code) {
       where = {
@@ -192,34 +223,38 @@ class SchedulesService {
       const err = ErrorCodes['800019'];
       throw err;
     }
-    device_id = deviceExist.id
-    if (!user_id && occupant_id) {
-      const isHavePermission = await database.occupants_permissions.findOne({
-        where: {
-          [Op.or]: [
-            {
-              receiver_occupant_id: occupant_id,
-              is_temp_access: false,
-              gateway_id: deviceExist.gateway_id,
-            },
-            {
-              receiver_occupant_id: occupant_id,
-              end_time: {
-                [Op.gte]: moment().toDate(),
+    device_id = deviceExist.id;
+
+    if (isAdmin == false) {
+      if (!user_id && occupant_id) {
+        const isHavePermission = await database.occupants_permissions.findOne({
+          where: {
+            [Op.or]: [
+              {
+                receiver_occupant_id: occupant_id,
+                is_temp_access: false,
+                gateway_id: deviceExist.gateway_id,
               },
-              start_time: {
-                [Op.lte]: moment().toDate(),
-              },
-              is_temp_access: true,
-              gateway_id: deviceExist.gateway_id,
-            }],
-        },
-      });
-      if (!isHavePermission) {
-        const err = ErrorCodes['160045'];
-        throw err;
+              {
+                receiver_occupant_id: occupant_id,
+                end_time: {
+                  [Op.gte]: moment().toDate(),
+                },
+                start_time: {
+                  [Op.lte]: moment().toDate(),
+                },
+                is_temp_access: true,
+                gateway_id: deviceExist.gateway_id,
+              }],
+          },
+        });
+        if (!isHavePermission) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
       }
     }
+
     const getAllSchedules = await database.schedules.findAll({
       where: { device_id },
       raw: true,
@@ -431,7 +466,7 @@ class SchedulesService {
     return deviceMacAddress;
   }
 
-  static async addSchedules(schedules, device_id, company_id, user_id, occupant_id, euid, networkwifimac) {
+  static async addSchedules(schedules, device_id, company_id, user_id, occupant_id, euid, networkwifimac, source_IP) {
     let deviceExist = null;
     let calculateScheduleSize = null;
     let calculateScheduleSizeAdd = null;
@@ -561,7 +596,7 @@ class SchedulesService {
     if (!euid) {
       // if input payload is conatin device_id we delete all the schedules created on device , then create new schedules
       let isToPublish = false;
-      await this.deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish)
+      await this.deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish, source_IP)
         .catch((err) => {
           throw err;
         });
@@ -581,7 +616,7 @@ class SchedulesService {
       };
       if (addSchedules) {
         ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.added,
-          Obj, Entities.notes.event_name.added, addSchedules.id, company_id, user_id, occupant_id, null);
+          Obj, Entities.notes.event_name.added, addSchedules.id, company_id, user_id, occupant_id, null, source_IP);
       }
     }
     // creeting reference in device_references.
@@ -612,7 +647,7 @@ class SchedulesService {
       if (allDevicesList && allDevicesList.length > 0) {
         const devicesList = lodash.map(allDevicesList, 'device_id');
         //  #3.. call the duplicate schedules function to create the same record for all the devices
-        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control")
+        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control", source_IP)
           .then((result) => result).catch((e) => {
             const err = e;
             throw (err);
@@ -623,7 +658,7 @@ class SchedulesService {
     return returnArray;
   }
 
-  static async updateSchedules(schedules, deviceid, euid, user_id, occupant_id, company_id, networkwifimac) {
+  static async updateSchedules(schedules, deviceid, euid, user_id, occupant_id, company_id, networkwifimac, source_IP) {
     const oldObj = {};
     const newObj = {};
     let afterUpdate = null;
@@ -809,7 +844,7 @@ class SchedulesService {
 
       if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
         ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.updated,
-          obj, Entities.notes.event_name.updated, existingData.id, company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.updated, existingData.id, company_id, user_id, occupant_id, null, source_IP);
       }
     }
     // creeting reference in device_references.
@@ -841,7 +876,7 @@ class SchedulesService {
       if (allDevicesList && allDevicesList.length > 0) {
         const devicesList = lodash.map(allDevicesList, 'device_id');
         //  #3.. call the duplicate schedules function to create the same record for all the devices
-        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control")
+        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control", source_IP)
           .then((result) => result).catch((e) => {
             const err = e;
             throw (err);
@@ -885,7 +920,7 @@ class SchedulesService {
     return schedules;
   }
 
-  static async updateDuplicateSchedules(from_device_id, to_device_ids, user_id, occupant_id, company_id, type) {
+  static async updateDuplicateSchedules(from_device_id, to_device_ids, user_id, occupant_id, company_id, type, source_IP) {
     let deviceExist = null;
     let schedulesExist = null;
     let where = {};
@@ -960,20 +995,49 @@ class SchedulesService {
           new: {},
         };
         ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, to_device_id, company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.deleted, to_device_id, company_id, user_id, occupant_id, null, source_IP);
       }
+      let fromsystemMode = await this.getSystemMode(company_id, deviceExist.device_code).catch(error => {
+        console.log("🚀 ~ SchedulesService ~ fromHoldType ~ err:", error)
+        const err = ErrorCodes['410006'];
+        throw err;
+      })
+      let constants = await constantFromConfigs.data('constants');
+      let tosystemMode = null
+      if (constants.DuplicateSchedulesConvertHeatCool && constants.DuplicateSchedulesConvertHeatCool.includes(fromdeviceExist.model) && constants.DuplicateSchedulesConvertHeatCool.includes(deviceExist.model)) {
+        tosystemMode = await this.getSystemMode(company_id, fromdeviceExist.device_code).catch(error => {
+          console.log("🚀 ~ SchedulesService ~ fromHoldType ~ err:", error)
+          const err = ErrorCodes['410006'];
+          throw err;
+        })
+      }
+
       for (const key in schedulesFromDeviceId) {
         const element = schedulesFromDeviceId[key];
-        const schedulesFromDeviceId_Schedule = element.schedule;
+        let schedulesFromDeviceId_Schedule = element.schedule;
 
         where = { id: to_device_id };
-        deviceExist = await this.deviceRecord(where);
-        if (!deviceExist) {
+        let fromdeviceExist = await this.deviceRecord(where);
+        if (!fromdeviceExist) {
           const err = ErrorCodes['800019'];
           throw err;
         }
+        if (constants.DuplicateSchedulesConvertHeatCool && constants.DuplicateSchedulesConvertHeatCool.includes(fromdeviceExist.model) && constants.DuplicateSchedulesConvertHeatCool.includes(deviceExist.model)) {
+          if (fromsystemMode && tosystemMode) {
+            if (fromsystemMode != tosystemMode && tosystemMode == 3) {
+              let schedulesFromDeviceIdScheduleStringify = JSON.stringify(schedulesFromDeviceId_Schedule)
+              schedulesFromDeviceIdScheduleStringify = schedulesFromDeviceIdScheduleStringify.replace(/SetAutoHeatingSetpoint_x100/g, 'SetAutoCoolingSetpoint_x100')
+              schedulesFromDeviceId_Schedule = JSON.parse(schedulesFromDeviceIdScheduleStringify)
+            } else if (fromsystemMode != tosystemMode && tosystemMode == 4) {
+              let schedulesFromDeviceIdScheduleStringify = JSON.stringify(schedulesFromDeviceId_Schedule)
+              schedulesFromDeviceIdScheduleStringify = schedulesFromDeviceIdScheduleStringify.replace(/SetAutoCoolingSetpoint_x100/g, 'SetAutoHeatingSetpoint_x100')
+              schedulesFromDeviceId_Schedule = JSON.parse(schedulesFromDeviceIdScheduleStringify)
+            }
+
+          }
+        }
         // add record
-        const create = await this.createSchedulesData(schedulesFromDeviceId_Schedule, to_device_id, deviceExist.device_code, company_id, user_id, occupant_id)
+        const create = await this.createSchedulesData(schedulesFromDeviceId_Schedule, to_device_id, fromdeviceExist.device_code, company_id, user_id, occupant_id, source_IP)
           .then((result) => result).catch((e) => {
             const err = e;
             throw (err);
@@ -989,7 +1053,7 @@ class SchedulesService {
       let ref = deviceReferenceObj.id;
       // if(type == 'single_control'){
       //   ref = uuid()
-      // }   
+      // }
       if (type == 'single_control') {
         await this.publishGenScheURL(company_id, fromdeviceExist.device_code, "NULL");
       } else {
@@ -1005,7 +1069,7 @@ class SchedulesService {
     return returnArray;
   }
 
-  static async deleteSchedules(id, company_id, user_id, occupant_id) {
+  static async deleteSchedules(id, company_id, user_id, occupant_id, source_IP) {
     const deleteSchedules = await database.schedules.findOne({
       where: { id },
     });
@@ -1056,7 +1120,7 @@ class SchedulesService {
       if (allDevicesList && allDevicesList.length > 0) {
         const devicesList = lodash.map(allDevicesList, 'device_id');
         //  #3.. call the duplicate schedules function to create the same record for all the devices
-        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control")
+        await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control", source_IP)
           .then((result) => result).catch((e) => {
             const err = e;
             throw (err);
@@ -1069,14 +1133,14 @@ class SchedulesService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, deleteSchedules.device_id, company_id, user_id, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, deleteSchedules.device_id, company_id, user_id, occupant_id, null, source_IP);
     // return deletedData;
     return {
       message: Responses.responses.schedules_delete_message,
     };
   }
 
-  static async deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish) {
+  static async deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish, source_IP) {
     // check valid device_id
     const deviceExist = await this.getDevice(device_id, company_id);
     if (!deviceExist) {
@@ -1127,7 +1191,7 @@ class SchedulesService {
         if (allDevicesList && allDevicesList.length > 0) {
           const devicesList = lodash.map(allDevicesList, 'device_id');
           //  #3.. call the duplicate schedules function to create the same record for all the devices
-          await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control")
+          await this.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control", source_IP)
             .then((result) => result).catch((e) => {
               const err = e;
               throw (err);
@@ -1140,7 +1204,7 @@ class SchedulesService {
           new: {},
         };
         ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, element.device_id, company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.deleted, element.device_id, company_id, user_id, occupant_id, null, source_IP);
       };
     }
     // return deleteSchedules;

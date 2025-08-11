@@ -51,7 +51,7 @@ class CategoryService {
         ActivityLogs.addActivityLog(Entities.categories.entity_name,
           Entities.categories.event_name.updated,
           obj, Entities.notes.event_name.updated, req.user_id,
-          req.body.company_id, req.user_id);
+          req.body.company_id, req.user_id, null, null,  req.source_IP);
         await deleteFromCache(cacheKey, req.body.model);
         await setInCache(cacheKey, req.body.model, { categories });
       }
@@ -78,7 +78,7 @@ class CategoryService {
       ActivityLogs.addActivityLog(Entities.categories.entity_name,
         Entities.categories.event_name.added,
         obj, Entities.notes.event_name.added, req.user_id,
-        req.body.company_id, req.user_id);
+        req.body.company_id, req.user_id, null, null, req.source_IP);
     }
     await deleteFromCache(cacheKey, req.body.model);
     await setInCache(cacheKey, req.body.model, { addCategories });

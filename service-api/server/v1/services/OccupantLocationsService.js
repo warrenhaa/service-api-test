@@ -193,7 +193,7 @@ class OccupantLocationsService {
       ActivityLogs.addActivityLog(Entities.locations.entity_name,
         Entities.locations.event_name.occupant_checked_in, obj,
         Entities.notes.event_name.added, locationId,
-        body.company_id, req.user_id, occupantId, placeholdersData);
+        body.company_id, req.user_id, occupantId, placeholdersData, req.source_IP);
     }
     if (occupantId) {
       const occupantInfo = await this.getOccupant(occupantId);
@@ -280,7 +280,7 @@ class OccupantLocationsService {
 
       ActivityLogs.addActivityLog(Entities.occupant.entity_name,
         Entities.occupant.event_name.check_in, obj, Entities.notes.event_name.added, occupantId,
-        body.company_id, req.user_id, occupantId, placeholdersData);
+        body.company_id, req.user_id, occupantId, placeholdersData, req.source_IP);
     }
     return occupantCheckIn;
   }
@@ -370,7 +370,7 @@ class OccupantLocationsService {
       ActivityLogs.addActivityLog(Entities.locations.entity_name,
         Entities.locations.event_name.occupant_checked_out, obj,
         Entities.notes.event_name.updated, locationId,
-        body.company_id, req.user_id, null, placeholdersData);
+        body.company_id, req.user_id, null, placeholdersData, req.source_IP);
       return null;
     }
     if (occupantId) {
@@ -458,7 +458,7 @@ class OccupantLocationsService {
       ActivityLogs.addActivityLog(
         Entities.occupant.entity_name, Entities.occupant.event_name.check_out,
         obj, Entities.notes.event_name.updated, occupantId, body.company_id, req.user_id,
-        occupantId, placeholdersData,
+        occupantId, placeholdersData, req.source_IP
       );
       return occupantCheckoutObj;
     }

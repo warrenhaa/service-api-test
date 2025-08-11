@@ -73,7 +73,7 @@ class OccupantsDashboardAttributesService {
     return getData;
   }
 
-  static AddorUpdateOccupantsDashboardAttributes(body, company_id, occupant_id) {
+  static AddorUpdateOccupantsDashboardAttributes(body, company_id, occupant_id, source_IP) {
     return new Promise(async (resolve, reject) => {
       const { item_id, type, grid_order } = body;
       const dashboardAttributeObj = {
@@ -112,7 +112,7 @@ class OccupantsDashboardAttributesService {
           new: addDashboardAttributes,
         };
         ActivityLogs.addActivityLog(Entities.occupants_dashboard_attributes.entity_name, Entities.occupants_dashboard_attributes.event_name.added,
-          Obj, Entities.notes.event_name.added, occupant_id, addDashboardAttributes.company_id, null, occupant_id, null);
+          Obj, Entities.notes.event_name.added, occupant_id, addDashboardAttributes.company_id, null, occupant_id, null, source_IP);
         const dashboardAttributes = await this.getOccupantsDashboardAttributes(null, occupant_id, company_id, item_id, type);
         resolve(dashboardAttributes);
       } else {
@@ -135,7 +135,7 @@ class OccupantsDashboardAttributesService {
           new: newObj,
         };
         ActivityLogs.addActivityLog(Entities.occupants_dashboard_attributes.entity_name, Entities.occupants_dashboard_attributes.event_name.updated,
-          obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, null);
+          obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, null, source_IP);
         const dashboardAttributesobj = await this.getOccupantsDashboardAttributes(null, occupant_id, company_id, item_id, type);
         resolve(dashboardAttributesobj);
       }
@@ -145,7 +145,7 @@ class OccupantsDashboardAttributesService {
 
   }
 
-  static async updateOccupantsDashboardAttributes(id, body, occupant_id, companyId) {
+  static async updateOccupantsDashboardAttributes(id, body, occupant_id, companyId, source_IP) {
     const existingData = await this.getOccupantsDashboardAttributes(id, occupant_id, companyId);
     let afterUpdate = null;
     if (!existingData) {
@@ -174,12 +174,12 @@ class OccupantsDashboardAttributesService {
 
     // if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
     ActivityLogs.addActivityLog(Entities.occupants_dashboard_attributes.entity_name, Entities.occupants_dashboard_attributes.event_name.updated,
-      obj, Entities.notes.event_name.updated, occupant_id, companyId, null, occupant_id, null);
+      obj, Entities.notes.event_name.updated, occupant_id, companyId, null, occupant_id, null, source_IP);
     // }
     return afterUpdate;
   }
 
-  static async deleteOccupantsDashboardAttributes(id, occupant_id, company_id, item_id) {
+  static async deleteOccupantsDashboardAttributes(id, occupant_id, company_id, item_id, source_IP) {
     let where = {};
     if (item_id) {
       where = { item_id, occupant_id }
@@ -210,7 +210,7 @@ class OccupantsDashboardAttributesService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.occupants_dashboard_attributes.entity_name, Entities.occupants_dashboard_attributes.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, null, source_IP);
     return deletedData;
   }
 }

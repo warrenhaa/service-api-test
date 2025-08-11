@@ -160,7 +160,7 @@ class AccessPermissionService {
     const permissions = [];
     if (permissionBody.permissions.core_permissions) {
       const corePermissions = await CorePermissionService.addCorePermissions(
-        permissionBody,
+        permissionBody
       ).catch((err) => {
         console.log(err);
       });
@@ -227,7 +227,7 @@ class AccessPermissionService {
         new: {},
       };
       ActivityLogs.addActivityLog(Entities.permissions.entity_name, Entities.permissions.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, permissionToDelete.id, body.company_id, body.user_id, null);
+        obj, Entities.notes.event_name.deleted, permissionToDelete.id, body.company_id, body.user_id, null, null, null);
       return deletedPermission;
     }
     return null;

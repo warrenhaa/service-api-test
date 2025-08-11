@@ -52,7 +52,8 @@ export default class ActivityUtils {
   }
 
   static async addActivityLog(entity, event_name, data, notes, entity_id, company_id,
-    user_id, occupant_id, placeholders_data) {
+    user_id, occupant_id, placeholders_data, source_ip) {
+    // console.log("🚀 ~ file: ActivityUtils.js:60 ~ source_ip:", source_ip)
     return new Promise((resolve, reject) => {
       database.activity_logs.create({
         entity,
@@ -65,6 +66,7 @@ export default class ActivityUtils {
         event_time: new Date(),
         occupant_id,
         placeholders_data,
+        source_ip,
       }).then(async (result) => {
         const activityLogConfigData = await database.activity_log_communication_configs.findOne({
           where: {
@@ -85,4 +87,5 @@ export default class ActivityUtils {
       });
     });
   }
+
 }

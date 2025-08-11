@@ -9,6 +9,7 @@ import Responses from '../../utils/constants/Responses';
 import OneTouchCommunicationConfigService from './OneTouchCommunicationConfigService';
 import OneTouchCbCommunicationConfigService from './OneTouchCbCommunicationConfigService';
 import RuleGroupsService from './RuleGroupsService';
+import occupantDashboardService  from './OccupantDashboardService'
 
 const mustache = require('mustache');
 const moment = require('moment');
@@ -163,7 +164,7 @@ class OneTouchRulesService {
   }
 
   static async addOneTouchRule(rule, rule_trigger_key, key, gateway_code, company_id, occupant_id,
-    user_id, grid_order, communicationConfigs, name, keyList, cloudBridgeConfigs) {
+    user_id, grid_order, communicationConfigs, name, keyList, cloudBridgeConfigs, source_IP,identity_id) {
     let rulesObject = rule;
     let cloudBridgeConfigsArray = cloudBridgeConfigs;
     const gateway = await database.devices.findOne({
@@ -174,7 +175,7 @@ class OneTouchRulesService {
       const err = ErrorCodes['800013'];
       throw err;
     }
-    if (!user_id) {
+    if (!user_id && occupant_id) {
       const isHavePermission = await database.occupants_permissions.findOne({
         where: {
           [Op.or]: [
@@ -197,6 +198,19 @@ class OneTouchRulesService {
         },
       });
       if (!isHavePermission) {
+        const err = ErrorCodes['160045'];
+        throw err;
+      }
+    }
+    if((process.env.ALLOW_WITHOUT_OCCUPANT == "true" || process.env.ALLOW_WITHOUT_OCCUPANT == true)&& identity_id){
+      let userData = await occupantDashboardService.getUserData(identity_id)
+      console.log("🚀 ~ userData:", userData)
+      let gatewayIdList = [];
+      if (userData && userData.Items && userData.Items.length > 0) {
+        gatewayIdList = await occupantDashboardService.getGatewayIdList(userData) || [];
+        console.log("🚀 ~ gatewayIdList:", gatewayIdList)
+      }
+      if(!gatewayIdList.includes(gateway_code)){
         const err = ErrorCodes['160045'];
         throw err;
       }
@@ -277,7 +291,7 @@ class OneTouchRulesService {
             return element;
           });
         }
-        console.log("🚀 ~ file: OneTouchRulesService.js:231 ~ newArray:", newArray)
+        // console.log("🚀 ~ file: OneTouchRulesService.js:231 ~ newArray:", newArray)
 
         const data = {};
         const ruleData = {}
@@ -288,7 +302,7 @@ class OneTouchRulesService {
             arrayId = arrayId.replace(/[}]/g, '');
           }
           const numberArray = Array.from({ length: 128 }, (_, ind) => ind + 1);
-          // 
+          //
           const stringArray = numberArray.map((number) => number.toString());
           const uncommonNumbers = newArray.concat(stringArray)
             .filter((number) => !newArray.includes(number) || !stringArray.includes(number));
@@ -305,7 +319,7 @@ class OneTouchRulesService {
           }
         });
 
-        console.log("🚀 ~ file: OneTouchRulesService.js:247 ~ cloudBridgeConfigs.map ~ data:", data)
+        // console.log("🚀 ~ file: OneTouchRulesService.js:247 ~ cloudBridgeConfigs.map ~ data:", data)
 
         const renderedRuleString = mustache.render(rulesObject, ruleData);
         const renderedCbConfigString = mustache.render(cloudBridgeConfigsArray, data);
@@ -350,7 +364,7 @@ class OneTouchRulesService {
           throw err;
         }
 
-        communicationConfigsObj = await OneTouchCommunicationConfigService.createOneTouchCommunicationConfigData(oneTouchRuleObj.id, action_trigger_key, emails, phone_numbers, message, company_id, occupant_id)
+        communicationConfigsObj = await OneTouchCommunicationConfigService.createOneTouchCommunicationConfigData(oneTouchRuleObj.id, action_trigger_key, emails, phone_numbers, message, company_id, occupant_id, source_IP)
           .catch((error) => {
             const err = ErrorCodes['330009'];
             throw err;
@@ -366,7 +380,7 @@ class OneTouchRulesService {
           property_name, property_value, ruleop, device_code,
         } = value;
         promiseList.push(await OneTouchCbCommunicationConfigService.addCbConfigs(gateway_code, config_type, camera_id, array_id, property_name,
-          property_value, ruleop, device_code, occupant_id, company_id, user_id, oneTouchRuleObj.id))
+          property_value, ruleop, device_code, occupant_id, company_id, user_id, oneTouchRuleObj.id, source_IP))
 
 
       }
@@ -383,7 +397,7 @@ class OneTouchRulesService {
         grid_order,
       };
       await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input,
-        company_id, occupant_id);
+        company_id, occupant_id, source_IP);
     }
     const obj = {
       new: oneTouchRuleObj,
@@ -392,7 +406,7 @@ class OneTouchRulesService {
     const placeholdersData = {};
     ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
       Entities.one_touch_rules.event_name.added, obj, Entities.notes.event_name.added, oneTouchRuleObj.id,
-      company_id, user_id, occupant_id, placeholdersData);
+      company_id, user_id, occupant_id, placeholdersData, source_IP);
 
     if (occupant_id) {
       const ruleObj = await this.getOneTouchRule(rule_trigger_key, key, occupant_id)
@@ -406,13 +420,15 @@ class OneTouchRulesService {
   }
 
   static async updateOneTouchRule(rule, rule_trigger_key, company_id, occupant_id, user_id,
-    grid_order, communicationConfigs, key, name, keyList, cloudBridgeConfigs) {
+    grid_order, communicationConfigs, key, name, keyList, cloudBridgeConfigs, source_IP,identity_id) {
     let afterUpdateOneTouchRule = null;
     const oneTouchRule = await this.getOneTouchRule(rule_trigger_key, key, occupant_id);
     let rulesObject = rule;
     let cloudBridgeConfigsArray = cloudBridgeConfigs;
     let uniqueExistedConfigs = [];
     let uniqueNewConfigs = [];
+    let rulesActionTriggerKeyList = [];
+    const actionTriggerKeyList = [];
     let gateway = null;
     if (!oneTouchRule) {
       const err = ErrorCodes['330002'];
@@ -449,7 +465,7 @@ class OneTouchRulesService {
         id: oneTouchRule.gateway_id,
       },
     });
-    if (!user_id) {
+    if (!user_id && occupant_id) {
       const isHavePermission = await database.occupants_permissions.findOne({
         where: {
           [Op.or]: [
@@ -472,6 +488,17 @@ class OneTouchRulesService {
         },
       });
       if (!isHavePermission) {
+        const err = ErrorCodes['160045'];
+        throw err;
+      }
+    }
+    if((process.env.ALLOW_WITHOUT_OCCUPANT == "true" || process.env.ALLOW_WITHOUT_OCCUPANT == true)&& identity_id){
+      let userData = await occupantDashboardService.getUserData(identity_id)
+      let gatewayIdList = [];
+      if (userData && userData.Items && userData.Items.length > 0) {
+        gatewayIdList = await occupantDashboardService.getGatewayIdList(userData) || [];
+      }
+      if(!gatewayIdList.includes(gateway.device_code)){
         const err = ErrorCodes['160045'];
         throw err;
       }
@@ -556,7 +583,7 @@ class OneTouchRulesService {
             ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
               Entities.one_touch_rules.event_name.cbDeleted, obj, Entities.notes.event_name.deleted,
               oneTouchRule.id,
-              company_id, user_id, occupant_id, placeholdersData);
+              company_id, user_id, occupant_id, placeholdersData, source_IP);
           }
         }
         if (uniqueNewConfigs.length > 0) {
@@ -727,17 +754,49 @@ class OneTouchRulesService {
       const err = ErrorCodes['330001'];
       throw err;
     }
+    rulesActionTriggerKeyList = await OneTouchRulesService.getAllActionTriggerKeyList( oneTouchRule.id)
+      .then((result) => result).catch((e) => {
+        throw (e);
+      });
+    rulesActionTriggerKeyList = lodash.map(rulesActionTriggerKeyList, 'action_trigger_key');
+    
     if (communicationConfigs && communicationConfigs.length > 0) {
       for (const key in communicationConfigs) {
         const element = communicationConfigs[key];
         const { action_trigger_key } = element;
+        actionTriggerKeyList.push(action_trigger_key);
+        const { emails } = element;
+        const { phone_numbers } = element;
+        const { message } = element;
         // update one touch communication config
-        const updateCommunicationConfigs = await this.updateOneTouchCommunicationConfigAction(action_trigger_key, element, company_id, occupant_id);
+        const oneTouchCommunicationConfigObject = await OneTouchCommunicationConfigService.getOneTouchCommunicationConfigActionData(action_trigger_key)
+        .then((result) => result).catch((e) => {
+          throw (e);
+        });
+      // creeting reference in one_touch_rule_reference
+      if (!oneTouchCommunicationConfigObject) {
+        const communicationConfigsObj = await OneTouchCommunicationConfigService.createOneTouchCommunicationConfigData(oneTouchRule.id, action_trigger_key, emails, phone_numbers, message, company_id, occupant_id, source_IP)
+          .then((result) => result).catch((e) => {
+            throw (e);
+          });
+      }else{
+        const updateCommunicationConfigs = await this.updateOneTouchCommunicationConfigAction(action_trigger_key, element, company_id, occupant_id, source_IP);
         if (!updateCommunicationConfigs) {
           const err = ErrorCodes['330007'];
           throw err;
         }
       }
+      }
+    }
+    // check if sent body's action trigger key is present in one touch rule ids action trigger key list
+    let deleteRecord = rulesActionTriggerKeyList.filter((element) => !actionTriggerKeyList.includes(element));
+    // rule action trigger key is extra and not thr for update delete it.
+    for (const key in deleteRecord) {
+      const element = deleteRecord[key];
+      const deleteData = await this.deleteRecord(element, oneTouchRule.id, occupant_id, company_id, user_id, source_IP)
+        .then((result) => result).catch((e) => {
+          throw (e);
+        });
     }
     if (cloudBridgeConfigsArray) {
       if (cloudBridgeConfigsArray.length > 0) {
@@ -748,7 +807,7 @@ class OneTouchRulesService {
             property_name, property_value, ruleop, device_code,
           } = element;
           const cbommunicationConfigsObj = await OneTouchCbCommunicationConfigService.addCbConfigs(gateway.device_code, config_type, camera_id, array_id, property_name,
-            property_value, ruleop, device_code, occupant_id, company_id, user_id, oneTouchRule.id)
+            property_value, ruleop, device_code, occupant_id, company_id, user_id, oneTouchRule.id, source_IP)
             .catch((error) => {
               const err = ErrorCodes['330019'];
               throw err;
@@ -782,7 +841,7 @@ class OneTouchRulesService {
           ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
             Entities.one_touch_rules.event_name.cbDeleted, obj, Entities.notes.event_name.deleted,
             oneTouchRule.id,
-            company_id, user_id, occupant_id, placeholdersData);
+            company_id, user_id, occupant_id, placeholdersData, source_IP);
         }
       }
     }
@@ -792,15 +851,6 @@ class OneTouchRulesService {
       const err = ErrorCodes['330002'];
       throw err;
     }
-    const oneTouchReferenceObj = await this.addDeviceReference(oneTouchRule.gateway_id);
-    if (!oneTouchReferenceObj) {
-      const err = ErrorCodes['330005'];
-      throw err;
-    }
-    const ref = oneTouchReferenceObj.id;
-    const host = process.env.SERVICE_API_HOST;
-    const url = `https://${host}/api/v1/one_touch/gateway_rules?ref=${ref}`;
-    await this.publishJsonUrl(company_id, gateway.device_code, url);
     const obj = {
       new: oneTouchRuleObj[1][0],
       old: oneTouchRule,
@@ -813,7 +863,7 @@ class OneTouchRulesService {
         grid_order,
       };
       await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input,
-        company_id, occupant_id).catch((err) => { throw err; });
+        company_id, occupant_id, source_IP).catch((err) => { throw err; });
     } else {
       // const dashboardAttributes = await database.occupants_dashboard_attributes.findOne({
       //   where: { item_id: oneTouchRule.id, occupant_id },
@@ -830,9 +880,12 @@ class OneTouchRulesService {
     if (JSON.stringify(oneTouchRule.rule) !== JSON.stringify(afterUpdateOneTouchRule.rule)) {
       ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
         Entities.one_touch_rules.event_name.updated, obj, Entities.notes.event_name.updated, oneTouchRule.id,
-        company_id, user_id, occupant_id, placeholdersData);
+        company_id, user_id, occupant_id, placeholdersData, source_IP);
     }
-    return afterUpdateOneTouchRule;
+    return {
+      afterUpdateOneTouchRule,
+      gateway
+    };
   }
 
   static async updateOneTouchGroupsRules(key) {
@@ -857,7 +910,7 @@ class OneTouchRulesService {
     return deleteOneTouchGroupsRules;
   }
 
-  static async deleteOneTouchRule(rule_trigger_key, company_id, occupant_id, user_id, key) {
+  static async deleteOneTouchRule(rule_trigger_key, company_id, occupant_id, user_id, key, source_IP) {
     let where = {};
     if (rule_trigger_key) {
       where = {
@@ -898,7 +951,7 @@ class OneTouchRulesService {
             };
             const placeholdersData = {};
             ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.deleted,
-              obj, Entities.notes.event_name.deleted, oneTouchRule.id, company_id, user_id, occupant_id, placeholdersData);
+              obj, Entities.notes.event_name.deleted, oneTouchRule.id, company_id, user_id, occupant_id, placeholdersData, source_IP);
           }
           return data;
         }).catch(() => {
@@ -920,7 +973,7 @@ class OneTouchRulesService {
 
     ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
       Entities.one_touch_rules.event_name.deleted, obj, Entities.notes.event_name.deleted, oneTouchRule.id,
-      company_id, user_id, occupant_id, placeholdersData);
+      company_id, user_id, occupant_id, placeholdersData, source_IP);
     return {
       message: Responses.responses.one_touch_delete_message,
     };
@@ -1033,7 +1086,7 @@ class OneTouchRulesService {
     return oneTouchRuleObj;
   }
 
-  static async getOneTouchRules(gateway_code, networkwifimac, occupant_id, user_id) {
+  static async getOneTouchRules(gateway_code, networkwifimac, occupant_id, user_id, isAdmin = false,identity_id) {
     let where = {};
     if (networkwifimac) {
       where = {
@@ -1055,33 +1108,51 @@ class OneTouchRulesService {
       const err = ErrorCodes['800013'];
       throw err;
     }
-    if (!user_id) {
-      const isHavePermission = await database.occupants_permissions.findOne({
-        where: {
-          [Op.or]: [
-            {
-              receiver_occupant_id: occupant_id,
-              is_temp_access: false,
-              gateway_id: gateway.id,
-            },
-            {
-              receiver_occupant_id: occupant_id,
-              end_time: {
-                [Op.gte]: moment().toDate(),
+    if (isAdmin == false) {
+      if (!user_id && occupant_id) {
+        const isHavePermission = await database.occupants_permissions.findOne({
+          where: {
+            [Op.or]: [
+              {
+                receiver_occupant_id: occupant_id,
+                is_temp_access: false,
+                gateway_id: gateway.id,
               },
-              start_time: {
-                [Op.lte]: moment().toDate(),
-              },
-              is_temp_access: true,
-              gateway_id: gateway.id,
-            }],
-        },
-      });
-      if (!isHavePermission) {
-        const err = ErrorCodes['160045'];
-        throw err;
+              {
+                receiver_occupant_id: occupant_id,
+                end_time: {
+                  [Op.gte]: moment().toDate(),
+                },
+                start_time: {
+                  [Op.lte]: moment().toDate(),
+                },
+                is_temp_access: true,
+                gateway_id: gateway.id,
+              }],
+          },
+        });
+        if (!isHavePermission) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
+      }
+      if((process.env.ALLOW_WITHOUT_OCCUPANT == "true" || process.env.ALLOW_WITHOUT_OCCUPANT == true)&& identity_id){
+        let userData = await occupantDashboardService.getUserData(identity_id).catch(err=>{
+          console.log("🚀 ~ userData ~ err:", err)
+        })
+        let gatewayIdList = [];
+        if (userData && userData.Items && userData.Items.length > 0) {
+          gatewayIdList = await occupantDashboardService.getGatewayIdList(userData).catch(err=>{
+            console.log("🚀 ~ userData ~ err:", err)
+          }) || [];
+        }
+        if(!gatewayIdList.includes(gateway_code)){
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
       }
     }
+
     let occupants_dashboard_attributes = {
       required: false,
       attributes: ['id', 'type', 'grid_order'],
@@ -1248,7 +1319,7 @@ class OneTouchRulesService {
     return rulesObj;
   }
 
-  static async updateOneTouchCommunicationConfigAction(action_trigger_key, body, companyId, occupantId) {
+  static async updateOneTouchCommunicationConfigAction(action_trigger_key, body, companyId, occupantId, source_IP) {
     const oldObj = {};
     const newObj = {};
     let message = body.message;
@@ -1306,7 +1377,7 @@ class OneTouchRulesService {
 
     if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
       ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.updated,
-        obj, Entities.notes.event_name.updated, oneTouchCommunicationConfig.id, companyId, null, occupantId, placeholdersData);
+        obj, Entities.notes.event_name.updated, oneTouchCommunicationConfig.id, companyId, null, occupantId, placeholdersData, source_IP);
     }
     return afterUpdate;
   }
@@ -1322,7 +1393,7 @@ class OneTouchRulesService {
     return oneTouchCommunicationConfigObj;
   }
 
-  static async deleteRecord(action_trigger_key, one_touch_rule_id, occupant_id, company_id, user_id) {
+  static async deleteRecord(action_trigger_key, one_touch_rule_id, occupant_id, company_id, user_id, source_IP) {
     const oneTouchCommunicationConfigObj = await database.one_touch_communication_configs.destroy({
       where: { action_trigger_key },
       raw: true,
@@ -1334,7 +1405,7 @@ class OneTouchRulesService {
         };
         const placeholdersData = {};
         ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, one_touch_rule_id, company_id, user_id, occupant_id, placeholdersData);
+          obj, Entities.notes.event_name.deleted, one_touch_rule_id, company_id, user_id, occupant_id, placeholdersData, source_IP);
       }
     }).catch(() => {
       const err = ErrorCodes['330008'];
@@ -1396,7 +1467,7 @@ class OneTouchRulesService {
   }
 
   static async updateRuleGroups(ruleTriggerKey,
-    ruleGroupIds, occupantId, companyId, userId, key) {
+    ruleGroupIds, occupantId, companyId, userId, key, source_IP) {
     let where = {};
     if (ruleTriggerKey) {
       where = {
@@ -1459,7 +1530,7 @@ class OneTouchRulesService {
               new: newObj,
             };
             ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.updated,
-              obj, Entities.notes.event_name.updated, element.id, companyId, userId, occupantId, null);
+              obj, Entities.notes.event_name.updated, element.id, companyId, userId, occupantId, null, source_IP);
           }
         }
       }
@@ -1498,7 +1569,7 @@ class OneTouchRulesService {
               new: newObj,
             };
             ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.updated,
-              obj, Entities.notes.event_name.updated, element, companyId, userId, occupantId, null);
+              obj, Entities.notes.event_name.updated, element, companyId, userId, occupantId, null, source_IP);
           }
         }
       }

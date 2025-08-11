@@ -144,7 +144,7 @@ class OccupantsGroupsService {
     return hexstrings[random];
   }
 
-  static async addOccupantGroup(body, occupantId, deviceList) {
+  static async addOccupantGroup(body, occupantId, deviceList, source_IP) {
     if (body.type == 'location') {
       const location = await database.locations.findOne({
         where: {
@@ -231,7 +231,7 @@ class OccupantsGroupsService {
       ActivityLogs.addActivityLog(Entities.occupants_groups.entity_name,
         Entities.occupants_groups.event_name.added,
         Obj, Entities.notes.event_name.added, occupantId,
-        body.company_id, null, occupantId, null);
+        body.company_id, null, occupantId, null, source_IP);
 
       let grid_order = null;
       if (body.grid_order) {
@@ -242,18 +242,18 @@ class OccupantsGroupsService {
           grid_order,
         };
         await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input,
-          body.company_id, occupantId);
+          body.company_id, occupantId, source_IP);
       }
       if (deviceList.length > 0) {
         await this.addOccupantGroupDevices(occupantGroupId, deviceList, occupantId,
-          body.company_id, body.type);
+          body.company_id, source_IP);
       }
     }
     const occupantGroup = await this.getOccupantGroup(occupantGroupId, occupantId, body.company_id);
     return occupantGroup;
   }
 
-  static async addOccupantGroupsDevices(occupantGroupId, deviceList, occupantId, companyId, type) {
+  static async addOccupantGroupsDevices(occupantGroupId, deviceList, occupantId, companyId, source_IP) {
     const linkedCompanies = await OccupantService.getlinkedCompanies(companyId)
     .catch((error) => {
       throw (error);
@@ -321,7 +321,7 @@ class OccupantsGroupsService {
           grid_order: await this.getRandomGridOrder(),
         };
         await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(body,
-          companyId, occupantId);
+          companyId, occupantId, source_IP);
       } else {
         Logger.error('Error! This device is not present in device table', { device_id: deviceId });
       }
@@ -349,7 +349,7 @@ class OccupantsGroupsService {
     return occupantGroups;
   }
 
-  static async updateOccupantsGroup(id, body, occupantId, companyId) {
+  static async updateOccupantsGroup(id, body, occupantId, companyId, source_IP) {
     const oldObj = {};
     const newObj = {};
     const linkedCompanies = await OccupantService.getlinkedCompanies(companyId)
@@ -398,7 +398,7 @@ class OccupantsGroupsService {
           grid_order,
         };
         await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input,
-          body.company_id, occupantId).catch((err) => { throw err; });
+          body.company_id, occupantId, source_IP).catch((err) => { throw err; });
       } else {
         const dashboardAttributes = await database.occupants_dashboard_attributes.findOne({
           where: { item_id: id, occupant_id: occupantId },
@@ -407,7 +407,7 @@ class OccupantsGroupsService {
           throw err;
         });
         if (dashboardAttributes) {
-          await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(dashboardAttributes.id, occupantId, body.company_id).catch((err) => {
+          await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(dashboardAttributes.id, occupantId, body.company_id,id, source_IP).catch((err) => {
             throw err;
           });
         }
@@ -433,7 +433,7 @@ class OccupantsGroupsService {
       if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
         ActivityLogs.addActivityLog(Entities.occupants_groups.entity_name,
           Entities.occupants_groups.event_name.updated,
-          obj, Entities.notes.event_name.updated, occupantId, companyId, null, occupantId, null);
+          obj, Entities.notes.event_name.updated, occupantId, companyId, null, occupantId, null, source_IP);
       }
       if (body.devices && body.devices.length > 0) {
         const groupDevices = await database.occupants_groups_devices.findAll({
@@ -476,11 +476,11 @@ class OccupantsGroupsService {
           }
         }
         if (addGroupDeviceList.length > 0) {
-          await this.addOccupantGroupDevices(id, addGroupDeviceList, occupantId, companyId);
+          await this.addOccupantGroupDevices(id, addGroupDeviceList, occupantId, companyId, source_IP);
         }
 
         if (deleteGroupDeviceList.length > 0) {
-          await this.deleteOccupantGroupDevices(id, deleteGroupDeviceList, occupantId, companyId);
+          await this.deleteOccupantGroupDevices(id, deleteGroupDeviceList, occupantId, companyId, source_IP);
         }
       }
       const occupantGroup = await this.getOccupantGroup(id, occupantId, companyId);
@@ -490,7 +490,7 @@ class OccupantsGroupsService {
     return null;
   }
 
-  static async addOccupantGroupDevices(occupantGroupId, deviceList, occupantId, companyId) {
+  static async addOccupantGroupDevices(occupantGroupId, deviceList, occupantId, companyId, source_IP) {
     const linkedCompanies = await OccupantService.getlinkedCompanies(companyId)
     .catch((error) => {
       throw (error);
@@ -568,7 +568,7 @@ class OccupantsGroupsService {
             ActivityLogs.addActivityLog(Entities.occupants_groups_devices.entity_name,
               Entities.occupants_groups_devices.event_name.added,
               Obj, Entities.notes.event_name.added, occupantId,
-              companyId, null, occupantId, null);
+              companyId, null, occupantId, null, source_IP);
             // const body = {
             //   item_id: deviceId,
             //   type: 'device',
@@ -588,7 +588,7 @@ class OccupantsGroupsService {
     return occupantGroup;
   }
 
-  static async deleteOccupantGroupDevices(occupantGroupId, deviceList, occupantId, companyId) {
+  static async deleteOccupantGroupDevices(occupantGroupId, deviceList, occupantId, companyId, source_IP) {
     const checkGroup = await database.occupants_groups.findOne({
       where: {
         id: occupantGroupId,
@@ -653,7 +653,7 @@ class OccupantsGroupsService {
             ActivityLogs.addActivityLog(Entities.occupants_groups_devices.entity_name,
               Entities.occupants_groups_devices.event_name.deleted,
               Obj, Entities.notes.event_name.deleted, occupantId,
-              companyId, null, occupantId, null);
+              companyId, null, occupantId, null, source_IP);
           }
         } else {
           Logger.error('Error! This device is not present in device table', { device_id: deviceId });
@@ -666,7 +666,7 @@ class OccupantsGroupsService {
     return occupantGroup;
   }
 
-  static async deleteOccupantGroup(id, occupantId, companyId) {
+  static async deleteOccupantGroup(id, occupantId, companyId, source_IP) {
     const deleteOccupantsGroups = await database.occupants_groups.findOne({
       where: {
         id,
@@ -684,7 +684,7 @@ class OccupantsGroupsService {
       },
     });
     if (dashboardAttribute && dashboardAttribute.id) {
-      await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(dashboardAttribute.id, occupantId, companyId).catch((err) => {
+      await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(dashboardAttribute.id, occupantId, companyId,id, source_IP).catch((err) => {
         Logger.error('error', err);
         // throw err;
       });
@@ -702,7 +702,7 @@ class OccupantsGroupsService {
     const deviceList = lodash.map(devices, (ele) => ele.device_id);
 
     if (deviceList && deviceList.length > 0) {
-      await this.deleteOccupantGroupDevices(id, deviceList, occupantId, companyId).catch((error) => { const err = ErrorCodes['160033']; throw err; });
+      await this.deleteOccupantGroupDevices(id, deviceList, occupantId, companyId, source_IP).catch((error) => { const err = ErrorCodes['160033']; throw err; });
     }
     const deletedData = await database.occupants_groups.destroy({
       where: {
@@ -720,7 +720,7 @@ class OccupantsGroupsService {
     };
     ActivityLogs.addActivityLog(Entities.occupants_groups.entity_name,
       Entities.occupants_groups.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, occupantId, companyId, null, occupantId, null);
+      obj, Entities.notes.event_name.deleted, occupantId, companyId, null, occupantId, null, source_IP);
     return deletedData;
   }
 
@@ -906,7 +906,7 @@ class OccupantsGroupsService {
         formatedLocations.push(obj);
       }
       return formatedLocations;
-    }).catch((err) => {  });
+    }).catch((err) => { });
 
     return groups;
   }

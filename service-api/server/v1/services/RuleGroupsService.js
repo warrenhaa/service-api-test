@@ -4,7 +4,7 @@ import ErrorCodes from '../../errors/ErrorCodes';
 import ActivityLogs from '../helpers/ActivityUtils';
 import Entities from '../../utils/constants/Entities';
 import DeviceService from './DevicesService';
-
+import occupantDashboardService  from './OccupantDashboardService'
 const { v4: uuidV4 } = require('uuid');
 const moment = require('moment');
 
@@ -31,7 +31,7 @@ class RuleGroupsService {
     return ruleGroups;
   }
 
-  static async getAllRuleGroups(gateway_id, company_id, networkwifimac, occupant_id, user_id, gateway_code) {
+  static async getAllRuleGroups(gateway_id, company_id, networkwifimac, occupant_id, user_id, gateway_code, isAdmin = false,identity_id) {
     let where = {};
     if (networkwifimac) {
       where = {
@@ -56,6 +56,95 @@ class RuleGroupsService {
     if (!gatewayExist) {
       const err = ErrorCodes['800013'];
       throw err;
+    }
+
+    if(isAdmin == false) {
+      if (!user_id && occupant_id) {
+        const isHavePermission = await database.occupants_permissions.findOne({
+          where: {
+            [Op.or]: [
+              {
+                receiver_occupant_id: occupant_id,
+                is_temp_access: false,
+                gateway_id,
+              },
+              {
+                receiver_occupant_id: occupant_id,
+                end_time: {
+                  [Op.gte]: moment().toDate(),
+                },
+                start_time: {
+                  [Op.lte]: moment().toDate(),
+                },
+                is_temp_access: true,
+                gateway_id,
+              }],
+          },
+        });
+        if (!isHavePermission) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
+      }
+      if((process.env.ALLOW_WITHOUT_OCCUPANT == "true" || process.env.ALLOW_WITHOUT_OCCUPANT == true)&& identity_id){
+        let userData = await occupantDashboardService.getUserData(identity_id)
+        let gatewayIdList = [];
+        if (userData && userData.Items && userData.Items.length > 0) {
+          gatewayIdList = await occupantDashboardService.getGatewayIdList(userData) || [];
+        }
+        if(!gatewayIdList.includes(gateway_code)){
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
+      }
+    }
+
+    const getAllRuleGroups = await database.rule_groups.findAll({
+      include: [{ model: database.devices }],
+      where: { gateway_id: gatewayExist.id },
+    }).then((result) => {
+      if (!result || result.length == 0) {
+        return [];
+      }
+      const list = [];
+      for (const element of result) {
+        if (element && element.device) {
+          if (element.device.rule_group_id == element.id) {
+            element.dataValues.is_enable = true;
+          } else {
+            element.dataValues.is_enable = false;
+          }
+        }
+        delete element.dataValues.device;
+        list.push(element);
+      }
+      return list;
+    }).catch(() => {
+      const err = ErrorCodes['370001'];
+      throw err;
+    });
+
+    return getAllRuleGroups;
+  }
+
+  static async addRuleGroups(name, icon, rules, gateway_id, company_id, user_id, occupant_id, is_enable, source_IP,gateway_code,identity_id) {
+    // check valid gateway_id
+    let where = {}
+    if(gateway_code){
+      where["device_code"]=gateway_code
+    }else{
+      where["id"]=gateway_id
+    }
+    const gatewayExist = await database.devices.findOne({
+      where,
+      raw: true,
+    }).catch((err) => { });
+    if (!gatewayExist) {
+      const err = ErrorCodes['800013'];
+      throw err;
+    }
+    if(!gateway_id){
+      gateway_id = gatewayExist.id
     }
     if (!user_id && occupant_id) {
       const isHavePermission = await database.occupants_permissions.findOne({
@@ -84,70 +173,18 @@ class RuleGroupsService {
         throw err;
       }
     }
-    const getAllRuleGroups = await database.rule_groups.findAll({
-      include: [{ model: database.devices }],
-      where: { gateway_id: gatewayExist.id },
-    }).then((result) => {
-      if (!result || result.length == 0) {
-        return [];
+    if((process.env.ALLOW_WITHOUT_OCCUPANT == "true" || process.env.ALLOW_WITHOUT_OCCUPANT == true)&& identity_id){
+      let userData = await occupantDashboardService.getUserData(identity_id)
+      let gatewayIdList = [];
+      if (userData && userData.Items && userData.Items.length > 0) {
+        gatewayIdList = await occupantDashboardService.getGatewayIdList(userData) || [];
       }
-      const list = [];
-      for (const element of result) {
-        if (element && element.device) {
-          if (element.device.rule_group_id == element.id) {
-            element.dataValues.is_enable = true;
-          } else {
-            element.dataValues.is_enable = false;
-          }
-        }
-        delete element.dataValues.device;
-        list.push(element);
-      }
-      return list;
-    }).catch(() => {
-      const err = ErrorCodes['370001'];
-      throw err;
-    });
-    return getAllRuleGroups;
-  }
-
-  static async addRuleGroups(name, icon, rules, gateway_id, company_id, user_id, occupant_id, is_enable) {
-    // check valid gateway_id
-    const gatewayExist = await database.devices.findOne({
-      where: { id: gateway_id },
-      raw: true,
-    }).catch((err) => { });
-    if (!gatewayExist) {
-      const err = ErrorCodes['800013'];
-      throw err;
-    }
-    if (!user_id) {
-      const isHavePermission = await database.occupants_permissions.findOne({
-        where: {
-          [Op.or]: [
-            {
-              receiver_occupant_id: occupant_id,
-              is_temp_access: false,
-              gateway_id,
-            },
-            {
-              receiver_occupant_id: occupant_id,
-              end_time: {
-                [Op.gte]: moment().toDate(),
-              },
-              start_time: {
-                [Op.lte]: moment().toDate(),
-              },
-              is_temp_access: true,
-              gateway_id,
-            }],
-        },
-      });
-      if (!isHavePermission) {
+      if(!gatewayIdList.includes(gateway_code)){
         const err = ErrorCodes['160045'];
         throw err;
       }
     }
+
     const nameExist = await database.rule_groups.findOne({
       where: { name, gateway_id },
       raw: true,
@@ -186,16 +223,16 @@ class RuleGroupsService {
             old: { rule_group_id: device.rule_group_id },
           };
           ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.enabled,
-            obj, Entities.notes.event_name.updated, addRuleGroups.id, company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, addRuleGroups.id, company_id, user_id, occupant_id, null, source_IP);
           ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, occupant_id, null, source_IP);
         }).catch((error) => {
           const err = ErrorCodes['370006'];
           throw err;
         });
         //  publish setTriggerRule logic
         const gatewayid = addRuleGroups.gateway_id;
-        // make rule groups rules array 
+        // make rule groups rules array
         const ruleGroupsArrayKeys = lodash.map(addRuleGroups.rules, 'key');
         /// get the one touch rules of all the one touch connected to this gateway_id
         const gatewayOneTouchArray = await database.one_touch_rules.findAll({
@@ -212,7 +249,7 @@ class RuleGroupsService {
             // check key included in RGA
             if (ruleGroupsArrayKeys.includes(element.key)) {
               const ruleTriggerKey = element.rule_trigger_key;
-              ////// publish 
+              ////// publish
               promiseList.push(await DeviceService.publishDeviceName(company_id, device.device_code, setTriggerRule, ruleTriggerKey));
             }
           }
@@ -236,9 +273,9 @@ class RuleGroupsService {
             old: { rule_group_id: device.rule_group_id },
           };
           ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.disabled,
-            obj, Entities.notes.event_name.updated, body.id, company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, body.id, company_id, user_id, occupant_id, null, source_IP);
           ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, occupant_id, null, source_IP);
         }).catch((error) => {
           const err = ErrorCodes['370007'];
           throw err;
@@ -247,12 +284,12 @@ class RuleGroupsService {
     }
     if (addRuleGroups) {
       ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.added,
-        Obj, Entities.notes.event_name.added, addRuleGroups.id, company_id, user_id, occupant_id, null);
+        Obj, Entities.notes.event_name.added, addRuleGroups.id, company_id, user_id, occupant_id, null, source_IP);
     }
     return addRuleGroups;
   }
 
-  static async updateRuleGroups(body, user_id, occupant_id) {
+  static async updateRuleGroups(body, user_id, occupant_id, source_IP) {
     const oldObj = {};
     const newObj = {};
     const existingData = await this.getRuleGroups(body.id, body.company_id);
@@ -303,9 +340,9 @@ class RuleGroupsService {
             old: { rule_group_id: device.rule_group_id },
           };
           ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.enabled,
-            obj, Entities.notes.event_name.updated, body.id, body.company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, body.id, body.company_id, user_id, occupant_id, null, source_IP);
           ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-            obj, Entities.notes.event_name.updated, existingData.gateway_id, body.company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, existingData.gateway_id, body.company_id, user_id, occupant_id, null, source_IP);
         }).catch((error) => {
           const err = ErrorCodes['370006'];
           throw err;
@@ -330,7 +367,7 @@ class RuleGroupsService {
             // check key included in RGA
             if (ruleGroupsArrayKeys.includes(element.key)) {
               const ruleTriggerKey = element.rule_trigger_key;
-              ////// publish 
+              ////// publish
               promiseList.push(await DeviceService.publishDeviceName(company_id, device.device_code, setTriggerRule, ruleTriggerKey));
             }
           }
@@ -354,9 +391,9 @@ class RuleGroupsService {
             old: { rule_group_id: device.rule_group_id },
           };
           ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.disabled,
-            obj, Entities.notes.event_name.updated, body.id, body.company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, body.id, body.company_id, user_id, occupant_id, null, source_IP);
           ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-            obj, Entities.notes.event_name.updated, existingData.gateway_id, body.company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.updated, existingData.gateway_id, body.company_id, user_id, occupant_id, null, source_IP);
         }).catch((error) => {
           const err = ErrorCodes['370007'];
           throw err;
@@ -397,14 +434,14 @@ class RuleGroupsService {
       delete deletedAfterUpdate.updated_at;
       if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
         ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.updated,
-          obj, Entities.notes.event_name.updated, existingData.id, body.company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.updated, existingData.id, body.company_id, user_id, occupant_id, null, source_IP);
       }
       return afterUpdate;
     }
     return existingData;
   }
 
-  static async deleteRuleGroups(id, company_id, user_id, occupant_id) {
+  static async deleteRuleGroups(id, company_id, user_id, occupant_id, source_IP) {
     const deleteRuleGroups = await database.rule_groups.findOne({
       where: { id },
     });
@@ -431,7 +468,7 @@ class RuleGroupsService {
           old: { rule_group_id: id },
         };
         ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-          obj, Entities.notes.event_name.updated, deleteRuleGroups.gateway_id, company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.updated, deleteRuleGroups.gateway_id, company_id, user_id, occupant_id, null, source_IP);
       }).catch((error) => {
         const err = ErrorCodes['370004'];
         throw err;
@@ -448,7 +485,7 @@ class RuleGroupsService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.rule_groups.entity_name, Entities.rule_groups.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, deleteRuleGroups.gateway_id, company_id, user_id, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, deleteRuleGroups.gateway_id, company_id, user_id, occupant_id, null, source_IP);
     return deletedData;
   }
 }

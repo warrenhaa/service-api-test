@@ -78,6 +78,9 @@ const Entities = Object.freeze({
       resend: 'OccupantPermissionResent',
     },
   },
+  dynamodb_delete: {
+    entity_name: 'DeleteRecordFromDynamoDB'
+  },
   camera_occupants_permissions: {
     entity_name: 'OccupantsPermissions',
     event_name: {
@@ -285,6 +288,7 @@ const Entities = Object.freeze({
       location_access_unshared: 'LocationAccessNotShared',
       location_access_removed: 'LocationAccessRemoved',
       location_access_not_removed: 'LocationAccessNotRemoved',
+      change_owner: 'ChangeOwner',
     },
   },
   models: {
@@ -345,6 +349,7 @@ const Entities = Object.freeze({
     event_name: {
       added: 'OccupantAlertConfigAdded',
       updated: 'OccupantAlertConfigUpdated',
+      deleted: 'OccupantAlertConfigDeleted',
     },
   },
   occupants_device_groups: {

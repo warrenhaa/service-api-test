@@ -13,7 +13,8 @@ class PreDefinedController {
     const { user_id } = req;
     const key = uuid.v4();
     rule.key = key;
-    const preDefinedRuleObj = await PreDefinedRulesService.addPreDefinedRule(rule, action_code, gateway_id, company_id, source_device_id, target_device_id, user_id)
+    const source_IP = req.source_IP;
+    const preDefinedRuleObj = await PreDefinedRulesService.addPreDefinedRule(rule, action_code, gateway_id, company_id, source_device_id, target_device_id, user_id, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -26,7 +27,8 @@ class PreDefinedController {
     const { user_id } = req;
     const { id } = req.query;
     const { company_id } = req.body;
-    const preDefinedRuleObj = await PreDefinedRulesService.deletePreDefinedRule(id, company_id, user_id)
+    const source_IP = req.source_IP;
+    const preDefinedRuleObj = await PreDefinedRulesService.deletePreDefinedRule(id, company_id, user_id, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);

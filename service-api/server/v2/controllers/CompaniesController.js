@@ -58,7 +58,8 @@ class CompaniesController {
     company.app_urls = req.body.app_urls;
     company.templates = req.body.templates;
     const userid = req.user_id;
-    const companyDetail = await CompaniesService.createCompanies(company, userid).then((value) => {
+    const source_IP = req.source_IP;
+    const companyDetail = await CompaniesService.createCompanies(company, userid, source_IP).then((value) => {
       req.body.company_id = value.dataValues.id;
       return AddressesService.createAddress(req.body, req).then(
         async (result) => {
@@ -80,6 +81,7 @@ class CompaniesController {
           let type = await LocationTypesService.getLocationTypeByName(siteInput.type);
           req.body.type_id = type.id;
           req.body.name = siteInput.name;
+          req.body.source_IP = req.source_IP;
           const defaultSite = await LocationsService.createLocations(req.body, req)
             .catch((error) => {
               const err = ErrorCodes['000007'];
@@ -90,6 +92,7 @@ class CompaniesController {
           req.body.type_id = type.id;
           req.body.container_id = defaultSite.id;
           req.body.name = buildingInput.name;
+          req.body.source_IP = req.source_IP;
           const defaultBuilding = await LocationsService.createLocations(req.body, req)
             .catch((error) => {
               const err = ErrorCodes['000007'];
@@ -100,6 +103,7 @@ class CompaniesController {
           req.body.type_id = type.id;
           req.body.container_id = defaultBuilding.id;
           req.body.name = floorInput.name;
+          req.body.source_IP = req.source_IP;
           const defaultFloor = await LocationsService.createLocations(req.body, req).catch((error) => {
             Logger.error('error', error);
             const err = ErrorCodes['000007'];
@@ -161,7 +165,7 @@ class CompaniesController {
 
   static async deleteCompanies(req, res) {
     const { id } = req.params;
-    const companies = await CompaniesService.deleteCompanies(id, req.user_id);
+    const companies = await CompaniesService.deleteCompanies(id, req.user_id, req.source_IP);
     if (companies) {
       await deleteFromCache(CacheKeys.COMPANIES, id);
       util.setSuccess(200);
@@ -179,6 +183,7 @@ class CompaniesController {
       req.body,
       id,
       req.user_id,
+      req.source_IP
     ).catch((error) => {
       const err = ErrorCodes['000004'];
       Logger.error('error', error);

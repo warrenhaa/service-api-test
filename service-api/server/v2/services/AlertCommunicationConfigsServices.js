@@ -56,7 +56,7 @@ class AlertCommunicationConfigsService {
       await ActivityLogs.addActivityLog(Entities.alert_communication_configs.entity_name,
         Entities.alert_communication_configs.event_name.updated,
         obj, Entities.notes.event_name.updated, alertCommId,
-        data.company_id, data.user_id, data.occupant_id);
+        data.company_id, data.user_id, data.occupant_id, null, data.source_IP);
       return updateAlertCommConfig;
     }
     const addAlertCommConfig = await database.alert_communication_configs.create({
@@ -87,7 +87,7 @@ class AlertCommunicationConfigsService {
     await ActivityLogs.addActivityLog(Entities.alert_communication_configs.entity_name,
       Entities.alert_communication_configs.event_name.added,
       obj, Entities.notes.event_name.added, addAlertCommConfig.id,
-      data.company_id, data.user_id, data.occupant_id);
+      data.company_id, data.user_id, data.occupant_id, null, data.source_IP);
     return addAlertCommConfig;
   }
 

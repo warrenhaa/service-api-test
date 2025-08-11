@@ -1,10 +1,15 @@
 module.exports = {
   up: async (queryInterface) => {
-    await queryInterface.removeConstraint(
-      'core_permissions',
-      'core_permissions_user_id_fkey',
-    );
-    await queryInterface.addConstraint('core_permissions', ['user_id'], {
+    try {
+      await queryInterface.removeConstraint(
+        'core_permissions',
+        'core_permissions_user_id_fkey'
+      );
+    } catch (error) {
+      console.log('Constraint did not exist, continuing...');
+    }
+    await queryInterface.addConstraint('core_permissions', {
+      fields: ['user_id'],
       type: 'foreign key',
       name: 'core_permissions_user_id_fkey',
       references: {

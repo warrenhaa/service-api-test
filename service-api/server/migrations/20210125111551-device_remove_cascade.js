@@ -1,10 +1,16 @@
 module.exports = {
   up: async (queryInterface) => {
-    await queryInterface.removeConstraint(
-      'devices',
-      'devices_location_id_fkey',
-    );
-    await queryInterface.addConstraint('devices', ['location_id'], {
+    try {
+      await queryInterface.removeConstraint(
+        'devices',
+        'devices_location_id_fkey',
+      );
+    } catch (error) {
+      
+    }
+ 
+    await queryInterface.addConstraint('devices',  {
+      fields:['location_id'],
       type: 'foreign key',
       name: 'devices_location_id_fkey',
       references: {

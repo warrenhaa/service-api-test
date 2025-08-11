@@ -29,7 +29,7 @@ import uuidRules from '../middlewares/validations/UUIDValidation';
 
 var {
   authVerification, authVerification, verifyCompanyCode, verifyOccupant,
-  verifyUserOrOccupant, verifyUser,
+  verifyUserOrOccupant, verifyUser,restrictDemoAccount
 } = require('../helpers/Authentication');
 var {
   authVerification, verifyCompanyCode, verifyOccupant,
@@ -41,7 +41,7 @@ router.post('/create_invitation', authVerification, verifyCompanyCode, verifyUse
 router.post('/occupant_check_in', authVerification, verifyCompanyCode, verifyUser, getCompanyIdFromCode, occupantCheckInRules(), validation, asyncErrorHandler(OccupantsController.occupantCheckIn));
 router.put('/occupant_check_out', authVerification, verifyCompanyCode, verifyUser, getCompanyIdFromCode, occupantCheckOutRules(), validation, asyncErrorHandler(OccupantsController.occupantCheckOut));
 router.post('/create_occupant', authVerification, verifyCompanyCode, getCompanyIdFromCode, occupantCreateRules(), validation, asyncErrorHandler(OccupantsController.addOccupants));
-router.get('/slider_list', authVerification, authVerification, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, asyncErrorHandler(OccupantsController.getOccupantSliderList));
+router.get('/slider_list', authVerification, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, asyncErrorHandler(OccupantsController.getOccupantSliderList));
 router.get('/slider_details', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, checkIdType(), validation, asyncErrorHandler(OccupantsController.getOccupantSliderDetails));
 router.get('/ungrouped_devices', authVerification, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, checkIdType(), validation, asyncErrorHandler(OccupantsController.getOccupantUnGroupedList));
 router.get('/categories', authVerification, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, checkIdType(), validation, asyncErrorHandler(OccupantsController.getOccupantCategoryList));
@@ -50,7 +50,7 @@ router.get('/delete_confirmation', authVerification, verifyCompanyCode, verifyUs
 router.put('/expire_invitations', verifyCompanyCode, getCompanyIdFromCode, asyncErrorHandler(OccupantsController.expireInvitation));
 router.put('/resend_invitation/:id', authVerification, verifyCompanyCode, verifyUser, getCompanyIdFromCode, uuidRules(), validation, asyncErrorHandler(OccupantsController.resendOccupantInvitation));
 router.put('/edit_invite_location/:id', authVerification, verifyCompanyCode, verifyUser, getCompanyIdFromCode, editInvitatioRules(), uuidRules(), validation, asyncErrorHandler(OccupantsController.editInviteLocation));
-router.put('/edit_occupant', authVerification, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, isEmptybody, validationForCountry, validationForPhoneNumber, editOccupantRules(), validation, asyncErrorHandler(OccupantsController.editOccupants));
+router.put('/edit_occupant', authVerification,restrictDemoAccount, verifyCompanyCode, verifyOccupant, getCompanyIdFromCode, isEmptybody, validationForCountry, validationForPhoneNumber, editOccupantRules(), validation, asyncErrorHandler(OccupantsController.editOccupants));
 router.get('/alerts', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, occupantDeviceAlertRules(), validation, asyncErrorHandler(OccupantsController.getOccupantAlerts));
 router.get('/device_alerts_count', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, occupantDeviceAlertRules(), validation, asyncErrorHandler(OccupantsController.getOccupantDeviceAlertsCount));
 router.delete('/delete_occupant', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, occupantDeleteValidation(), validation, asyncErrorHandler(OccupantsController.deleteOccupant));
@@ -86,4 +86,5 @@ router.post('/verify', verifyCompanyCode, getCompanyIdFromCode, occupantVerifica
 router.post('/verify', verifyCompanyCode, getCompanyIdFromCode, occupantVerificationRules(), validation, asyncErrorHandler(OccupantsController.verify));
 router.post('/login', verifyCompanyCode, getCompanyIdFromCode, occupantSignInRules(), validation, asyncErrorHandler(OccupantsController.signIn));
 router.post('/forgot_password', verifyCompanyCode, getCompanyIdFromCode, occupantForgotPasswordRules(), validation, asyncErrorHandler(OccupantsController.passwordReset));
+router.post('/notify_change_password',authVerification, verifyCompanyCode,verifyOccupant, getCompanyIdFromCode, asyncErrorHandler(OccupantsController.passwordChanged));
 export default router;

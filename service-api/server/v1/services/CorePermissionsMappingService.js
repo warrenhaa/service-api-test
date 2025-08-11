@@ -35,7 +35,7 @@ class CorePermissionsMappingsService {
       new: corePermissionMapping,
     };
     ActivityLogs.addActivityLog(Entities.corepermissions_mappings.entity_name, Entities.corepermissions_mappings.event_name.added,
-      obj, Entities.notes.event_name.added, corePermissionMapping.id, body.company_id, req.user_id, null);
+      obj, Entities.notes.event_name.added, corePermissionMapping.id, body.company_id, req.user_id, null, req.source_IP);
     return corePermissionMapping;
   }
 
@@ -53,7 +53,7 @@ class CorePermissionsMappingsService {
         new: {},
       };
       ActivityLogs.addActivityLog(Entities.corepermissions_mappings.entity_name, Entities.corepermissions_mappings.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, permissionToDelete.id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.deleted, permissionToDelete.id, body.company_id, req.user_id, null, req.source_IP);
       return deletedInvite;
     }
     return null;
@@ -92,7 +92,7 @@ class CorePermissionsMappingsService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.corepermissions_mappings.entity_name, Entities.corepermissions_mappings.event_name.updated,
-        obj, Entities.notes.event_name.updated, permissionToUpdate.id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, permissionToUpdate.id, body.company_id, req.user_id, null, req.source_IP);
       return updatedPermission;
     }
     return null;

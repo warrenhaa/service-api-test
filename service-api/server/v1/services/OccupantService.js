@@ -22,7 +22,8 @@ import OccupantsGroupsService from './OccupantsGroupsService';
 import { DPCommands } from '../../utils/constants/DeviceProvisionCommands';
 import cameraDeviceActionQueue from '../../sqs/CameraDeviceActionQueueProducer';
 import { getCompany } from '../../cache/Companies';
-import communicateWithAwsIotService from './CommunicateWithAwsIotService';
+import communicateWithAwsIotService from './CommunicateWithAwsIotService'
+import RecoverFailedQueueProducer from '../../sqs/RecoverFailedQueueProducer';
 const moment = require('moment');
 const AWS = require('aws-sdk');
 const { data } = require('../../cache/constantFromConfigs')
@@ -68,12 +69,12 @@ class OccupantService {
       });
     const result = await database.occupants_permissions.findAll({
       include: [{
-        attributes: ['id', 'email', 'first_name', 'last_name', 'phone_number', 'identity_id', 'cognito_id'],
+        attributes: ['id', 'email', 'first_name', 'last_name', 'identity_id', 'cognito_id'],
         model: database.occupants,
         as: 'receiver_occupant',
       },
       {
-        attributes: ['id', 'email', 'first_name', 'last_name', 'phone_number', 'identity_id', 'cognito_id'],
+        attributes: ['id', 'email', 'first_name', 'last_name', 'identity_id', 'cognito_id'],
         model: database.occupants,
         as: 'sharer_occupant',
       },
@@ -219,11 +220,11 @@ class OccupantService {
         ActivityLogs.addActivityLog(Entities.occupant.entity_name,
           Entities.occupant.event_name.location_updated, locationObj,
           Entities.notes.event_name.added, invite.id,
-          body.company_id, req.user_id);
+          body.company_id, req.user_id, null, null, req.source_IP);
         ActivityLogs.addActivityLog(Entities.locations.entity_name,
           Entities.occupant.event_name.invitation_checkin, locationObj,
           Entities.notes.event_name.added, element,
-          body.company_id, req.user_id);
+          body.company_id, req.user_id, null, null, req.source_IP);
       }
     }
     const accessLocations = await OccupantService.formatLocations(accessToList);
@@ -258,12 +259,14 @@ class OccupantService {
     await ActivityLogs.addActivityLog(Entities.occupant.entity_name,
       Entities.occupant.event_name.invite_added,
       obj, Entities.notes.event_name.added, invite.id,
-      body.company_id, req.user_id, null, placeholdersData);
+      body.company_id, req.user_id, null, placeholdersData, req.source_IP);
     return invite;
   }
 
   static async getAllOccupants(req) {
     const companyId = req.body.company_id;
+    const { user_id } = req.query;
+
     const locationWhere = {};
     locationWhere.status = 'checked in';
     const locationId = req.query.location_id;
@@ -272,21 +275,37 @@ class OccupantService {
       required = true;
       locationWhere.location_id = locationId;
     }
-    const occupants = await database.occupants
-      .findAll({
-        include: [{
-          required,
-          model: database.occupants_locations,
-          order: [['created_at', 'desc']],
-          where: locationWhere,
-        }],
-        where: {
-          company_id: companyId,
-        },
-        order: [['created_at', 'desc']],
-      })
-      .then((result) => result);
-    return occupants;
+
+    if ( user_id ) {
+      const occupants = await database.occupants
+          .findAll({
+            where: {
+              company_id: companyId,
+              id: user_id,
+            },
+            order: [['created_at', 'desc']],
+          })
+          .then((result) => result);
+      return occupants;
+
+    } else {
+      const occupants = await database.occupants
+          .findAll({
+            include: [{
+              required,
+              model: database.occupants_locations,
+              order: [['created_at', 'desc']],
+              where: locationWhere,
+            }],
+            where: {
+              company_id: companyId,
+            },
+            order: [['created_at', 'desc']],
+          })
+          .then((result) => result);
+      return occupants;
+
+    }
   }
 
   static async getInviteEmail(email) {
@@ -405,7 +424,7 @@ class OccupantService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.invite_resend,
-        obj, Entities.notes.event_name.updated, id, body.company_id, req.user_id, null, placeholdersData);
+        obj, Entities.notes.event_name.updated, id, body.company_id, req.user_id, null, placeholdersData, req.source_IP);
       return updatedResend;
     }
     return null;
@@ -434,7 +453,7 @@ class OccupantService {
         new: element,
       };
       ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.invite_expire,
-        obj, Entities.notes.event_name.updated, element.id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, element.id, body.company_id, req.user_id, null, null, req.source_IP);
     });
     return expireInvitations;
   }
@@ -534,11 +553,11 @@ class OccupantService {
           ActivityLogs.addActivityLog(Entities.occupant.entity_name,
             Entities.occupant.event_name.location_updated, locationObj,
             Entities.notes.event_name.added, id,
-            req.body.company_id, req.user_id);
+            req.body.company_id, req.user_id, null, null, req.source_IP);
           ActivityLogs.addActivityLog(Entities.locations.entity_name,
             Entities.occupant.event_name.invitation_checkin_updated, locationObj,
             Entities.notes.event_name.added, element,
-            req.body.company_id, req.user_id, null, placeholdersData);
+            req.body.company_id, req.user_id, null, placeholdersData, req.source_IP);
         } else {
           await database.occupants_locations.destroy({
             where: {
@@ -555,11 +574,11 @@ class OccupantService {
           ActivityLogs.addActivityLog(Entities.occupant.entity_name,
             Entities.occupant.event_name.location_updated, locationObj,
             Entities.notes.event_name.added, id,
-            req.body.company_id, req.user_id);
+            req.body.company_id, req.user_id, null, null, req.source_IP);
           ActivityLogs.addActivityLog(Entities.locations.entity_name,
             Entities.locations.event_name.occupant_invitation_updated, locationObj,
             Entities.notes.event_name.deleted, element,
-            req.body.company_id, req.user_id);
+            req.body.company_id, req.user_id, null, null, req.source_IP);
         }
       });
     }
@@ -609,7 +628,7 @@ class OccupantService {
           ActivityLogs.addActivityLog(Entities.locations.entity_name,
             Entities.locations.event_name.occupant_invitation_deleted, element,
             Entities.notes.event_name.deleted, element.location_id,
-            body.company_id, req.user_id);
+            body.company_id, req.user_id, null, null, req.source_IP);
         });
       }
       const deletedInvite = await database.occupants_invitations.destroy({
@@ -630,7 +649,7 @@ class OccupantService {
       ActivityLogs.addActivityLog(Entities.occupant.entity_name,
         Entities.occupant.event_name.invite_delete,
         obj, Entities.notes.event_name.deleted, inviteToDelete.id,
-        body.company_id, req.user_id, null, placeholdersData);
+        body.company_id, req.user_id, null, placeholdersData, req.source_IP);
       return deletedInvite;
     }
     return null;
@@ -652,7 +671,7 @@ class OccupantService {
   }
 
   static async addOccupantDefaultLocation(company_id, email, occupant_id) {
-    // get company data from cache, if not present set 
+    // get company data from cache, if not present set
     const companyDetails = await getCompany(company_id).then(result => {
       return (result);
     }).catch((error) => {
@@ -714,7 +733,7 @@ class OccupantService {
       occupant: occupants
     }
     ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.owner_occupant_permission_failed,
-      activityObj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id, placeholdersData);
+      activityObj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id, placeholdersData, req.source_IP);
     Logger.error('device provision error', "Device Provision error", data);
   }
 
@@ -841,6 +860,10 @@ class OccupantService {
         language,
         country,
       }).catch((err) => {
+        const data = {
+          body: body,
+        };
+        RecoverFailedQueueProducer.sendProducer(data);
         throw (err);
       });
       if (body.metadata) {
@@ -888,7 +911,7 @@ class OccupantService {
             new: addMetaData,
           };
           ActivityLogs.addActivityLog(Entities.occupants_metadata.entity_name, Entities.occupants_metadata.event_name.added,
-            obj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id);
+            obj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id, null, req.source_IP);
         }
       }
       if (invite) {
@@ -1031,7 +1054,7 @@ class OccupantService {
                     grid_order: await OccupantsGroupsService.getRandomGridOrder(),
                   };
                   await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(bodyUpdate,
-                    body.company_id, occupants.id);
+                    body.company_id, occupants.id, req.source_IP);
                 }
                 let input = {
                   gateway_id: iterator.gateway.id,
@@ -1065,7 +1088,7 @@ class OccupantService {
                 occupant: occupants
               }
               ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.owner_occupant_permission_failed,
-                activityObj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id, placeholdersData);
+                activityObj, Entities.notes.event_name.added, occupants.id, body.company_id, req.user_id, occupants.id, placeholdersData, req.source_IP);
               Logger.error('device provision error', error);
             });
           const sharer_occupant_id = (iterator.sharer_occupant) ? iterator.sharer_occupant.identity_id : iterator.sharer_occupant_id;
@@ -1096,19 +1119,19 @@ class OccupantService {
                 });
               if (cameraDeviceExist) {
                 const data = {
-                  occupant_id: occupants.identity_id,
+                  occupant_id: sharer_occupant_id,
                   camera_id: cameraDeviceExist.camera_id,
                   action: {
                     type: "access",
                     event: "share",
-                    value: sharer_occupant_id,
+                    value: occupants.identity_id,
                   },
                   time: moment(new Date()).utc().format('DD-MM-YYYY'),
                 }
                 // send this object in action queue
                 cameraDeviceActionQueue.sendProducer(data);
               }
-            } // end for 
+            } // end for
           } // end if
         } //end for occ per's
       } // end if occ per's
@@ -1119,14 +1142,14 @@ class OccupantService {
         ActivityLogs.addActivityLog(Entities.occupant.entity_name,
           Entities.occupant.event_name.joined,
           obj, Entities.notes.event_name.added, occupants.id, body.company_id,
-          inviterUserId, occupants.id, placeholdersData);
+          inviterUserId, occupants.id, placeholdersData, req.source_IP);
       }
       const placeholdersData = {
         receiverList: [{ email: occupants.email }],
       };
       ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.added,
         obj, Entities.notes.event_name.added, occupants.id, body.company_id,
-        inviterUserId, occupants.id, placeholdersData);
+        inviterUserId, occupants.id, placeholdersData, req.source_IP);
       return occupants;
     }
     const err = ErrorCodes['160002'];
@@ -1213,7 +1236,7 @@ class OccupantService {
     };
     ActivityLogs.addActivityLog(Entities.occupant.entity_name,
       Entities.occupant.event_name.check_in, obj, Entities.notes.event_name.updated, occupantId,
-      body.company_id, req.user_id, occupantId, placeholdersData);
+      body.company_id, req.user_id, occupantId, placeholdersData, req.source_IP);
 
     return occupantCheckIn;
   }
@@ -1328,7 +1351,7 @@ class OccupantService {
     });
 
     if (req.body.metadata) {
-      await this.updateOccupantMetadata(req.body.metadata, id, occupantId, companyId, req.user_id)
+      await this.updateOccupantMetadata(req.body.metadata, id, occupantId, companyId, req.user_id, req.source_IP)
         .catch((err) => {
           throw err;
         });
@@ -1348,7 +1371,7 @@ class OccupantService {
       new: newObj,
     };
     ActivityLogs.addActivityLog(Entities.occupant.entity_name, Entities.occupant.event_name.updated,
-      obj, Entities.notes.event_name.updated, occupantId, companyId, req.user_id, occupantId);
+      obj, Entities.notes.event_name.updated, occupantId, companyId, req.user_id, occupantId, null, req.source_IP);
 
     const updateOccupant = await this.getOccupantProfile(occupantId, companyId);
     return updateOccupant;
@@ -1373,34 +1396,35 @@ class OccupantService {
       return { success: false };
     }
     let is_property_present = false
-    Object.keys(reported).forEach((key) => {
-      if (reported[key].hasOwnProperty('properties')) {
-        const { properties } = reported[key];
-        base_key = key;
-        if (Object.keys(properties).length > 0) {
-          base = Object.keys(properties)[0];
-        }
-        Object.keys(properties).forEach((key) => {
-          let baseSplitArray = base.split(':');
-          let property_key = `${baseSplitArray[0]}${check_property}`;
-          if (key == property_key) {
-            // console.log("🚀 ~ file: OccupantService.js:1332 ~ Object.keys ~ property_key:", property_key, key)
-            is_property_present = true
+    let property_name = null
+      Object.keys(reported).forEach((key) => {
+        if (reported[key].hasOwnProperty('properties')) {
+          const { properties } = reported[key];
+          base_key = key;
+          if (Object.keys(properties).length > 0) {
+            base = Object.keys(properties)[0];
           }
-        })
-      }
-    });
-    console.log("🚀 ~ file: OccupantService.js:1336 ~ Object.keys ~ property_key:", is_property_present, device_code)
+          Object.keys(properties).forEach((propertyKey) => {
+            let baseSplitArray = propertyKey.split(':');
+            if (baseSplitArray.includes(check_property)) {
+              property_name = propertyKey
+              is_property_present = true
+            }
+          })
+        }
+      });
+   
     if (is_property_present == false) {
       return { success: false };
     }
-    if (!base) {
+    
+    if (!base || !property_name) {
       // const err = ErrorCodes['330005'];
       // throw err;
       return { success: false };
     } else {
-      const baseSplitArray = base.split(':');
-      const setProperty = `${baseSplitArray[0]}${property}`;
+      const baseSplitArray = property_name.split(':');
+      const setProperty = `${baseSplitArray[0]}:${baseSplitArray[1]}:${property}`;
       var payload = {
         state:
         {
@@ -1419,7 +1443,7 @@ class OccupantService {
         topic,
         payload: JSON.stringify(payload),
       };
-
+      
       const publishShadowData = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'publish').then((data) => data);
       if (!publishShadowData) {
         // not published the url
@@ -1430,7 +1454,7 @@ class OccupantService {
     }
   }
 
-  static async updateOccupantMetadata(metadata, id, occupantId, companyId, userId) {
+  static async updateOccupantMetadata(metadata, id, occupantId, companyId, userId, source_IP) {
     const keys = Object.keys(metadata);
     for (const key of keys) {
       let value = metadata[key];
@@ -1475,12 +1499,16 @@ class OccupantService {
 
           let constant = {
             "global_temperature_display_mode": {
-              "setProperty": ":sIT600TH:SetTemperatureDisplayMode",
-              "property": ":sIT600TH:TemperatureDisplayMode"
+              "setProperty": "SetTemperatureDisplayMode",
+              "property": "TemperatureDisplayMode"
             },
             "global_time_format_24_hour": {
-              "setProperty": ":sIT600TH:SetTimeFormat24Hour",
-              "property": ":sIT600TH:TimeFormat24Hour"
+              "setProperty": "SetTimeFormat24Hour",
+              "property": "TimeFormat24Hour"
+            },
+            "global_time_format_24_hour_zc": {
+              "setProperty": "SetTimeFormat24Hour",
+              "property": "TimeFormat24Hour"
             }
           }
 
@@ -1509,6 +1537,9 @@ class OccupantService {
                       if (device.type != "coordinator_device" && [1, 0, "1", "0"].includes(value)) {
                         var device_code = device.device_code
                         promiseList.push(publishDeviceProperty(companyId, device_code, constant[key].setProperty, parseInt(value), constant[key].property))
+                      }else if(device.type == "coordinator_device" && [1, 0, "1", "0"].includes(value) && key == "global_time_format_24_hour" ){
+                        var device_code = device.device_code
+                        promiseList.push(publishDeviceProperty(companyId, device_code, constant["global_time_format_24_hour_zc"].setProperty, parseInt(value), constant["global_time_format_24_hour_zc"].property))
                       }
                     }
                     if (promiseList.length > 0) {
@@ -1570,7 +1601,7 @@ class OccupantService {
           delete deletedAfterUpdate.updated_at;
           if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
             ActivityLogs.addActivityLog(Entities.occupants_metadata.entity_name, Entities.occupants_metadata.event_name.updated,
-              obj, Entities.notes.event_name.updated, occupantId, companyId, userId, occupantId);
+              obj, Entities.notes.event_name.updated, occupantId, companyId, userId, occupantId, null, source_IP);
           }
         }
       } else {
@@ -1587,7 +1618,7 @@ class OccupantService {
             new: addMetaData,
           };
           ActivityLogs.addActivityLog(Entities.occupants_metadata.entity_name, Entities.occupants_metadata.event_name.added,
-            obj, Entities.notes.event_name.added, occupantId, companyId, userId, occupantId);
+            obj, Entities.notes.event_name.added, occupantId, companyId, userId, occupantId, null, source_IP);
         }
       }
     }
@@ -1715,7 +1746,7 @@ class OccupantService {
           throw err;
         });
       // const company = await getCompany(companyId).then(result => {
-      //   return (result);  
+      //   return (result);
       // }).catch((error) => {
       //   throw (error);
       // });
@@ -1735,7 +1766,7 @@ class OccupantService {
       };
       ActivityLogs.addActivityLog(Entities.occupant.entity_name,
         Entities.occupant.event_name.delete_job,
-        Obj, Entities.notes.event_name.added, OccupantToDelete.id, companyId, userId, OccupantToDelete.id, null);
+        Obj, Entities.notes.event_name.added, OccupantToDelete.id, companyId, userId, OccupantToDelete.id, null, req.source_IP);
 
       jobObj.message = Responses.responses.occupant_delete_job_message;
       return (jobObj);
@@ -1973,7 +2004,7 @@ class OccupantService {
         resolve([]);
       }
       const gateways = await database.devices.findAll({
-        attributes: ['id', 'type', 'device_code', 'model', 'name', 'plan_code'],
+        attributes: ['id', 'type', 'device_code', 'model', 'name', 'plan_code','timezone'],
         include: [
           {
             required: false,
@@ -2050,7 +2081,7 @@ class OccupantService {
             device_count = gateway.gateway_devices.length - 1
           }
           obj.gateway = {
-            id: gateway.id, device_code: gateway.device_code, category: gateway.category, model: gateway.model, name: gateway.name, plan_code: gateway.plan_code, occupants_permissions: gateway.occupants_permissions[0], coordinator_device: gateway.coordinator_device, rule_group: gateway.rule_group, device_count: device_count
+            id: gateway.id, device_code: gateway.device_code, category: gateway.category, model: gateway.model, name: gateway.name, plan_code: gateway.plan_code, occupants_permissions: gateway.occupants_permissions[0], coordinator_device: gateway.coordinator_device, rule_group: gateway.rule_group, device_count: device_count,timezone:gateway.timezone
           };
           formatedGateways.push(obj);
         }
@@ -2631,7 +2662,7 @@ class OccupantService {
               Logger.error('error 2135:', err);
               throw (err);
             });
-            //create object 
+            //create object
             if (cameraDevicesData) {
               // prepare object including dashboard_attributes
               // put here for Items
@@ -2646,7 +2677,7 @@ class OccupantService {
         }
 
       } else {
-        // if (isHavePermission.access_level != 'O' && (isHavePermission.receiver_occupant_id != isHavePermission.sharer_occupant_id)) 
+        // if (isHavePermission.access_level != 'O' && (isHavePermission.receiver_occupant_id != isHavePermission.sharer_occupant_id))
         // if occupant permission is present then check camera assigned to that gateway permission
         // find all where this occ_per_id present in occ_cam_per table
         const occupantCameraPermissions = await database.occupants_camera_permissions.findAll({
@@ -2680,7 +2711,7 @@ class OccupantService {
               Logger.error('error 2185:', err);
               throw (err);
             });
-            //create object 
+            //create object
             if (cameraDevicesData) {
               // prepare object including dashboard_attributes
               // put here for Items
@@ -2819,7 +2850,7 @@ class OccupantService {
               Logger.error('error 2135:', err);
               throw (err);
             });
-            //create object 
+            //create object
             if (cameraDevicesData) {
               // prepare object including dashboard_attributes
               // put here for Items
@@ -2834,7 +2865,7 @@ class OccupantService {
         }
 
       } else {
-        // if (isHavePermission.access_level != 'O' && (isHavePermission.receiver_occupant_id != isHavePermission.sharer_occupant_id)) 
+        // if (isHavePermission.access_level != 'O' && (isHavePermission.receiver_occupant_id != isHavePermission.sharer_occupant_id))
         // if occupant permission is present then check camera assigned to that gateway permission
         // find all where this occ_per_id present in occ_cam_per table
         const occupantCameraPermissions = await database.occupants_camera_permissions.findAll({
@@ -2868,7 +2899,7 @@ class OccupantService {
               Logger.error('error 2185:', err);
               throw (err);
             });
-            //create object 
+            //create object
             if (cameraDevicesData) {
               // prepare object including dashboard_attributes
               // put here for Items
@@ -3820,6 +3851,46 @@ class OccupantService {
           }
         } else {
           occupant.dataValues.new_terms_detected = new_terms_detected;
+        }
+        if (occupant.occupants_metadata && occupant.occupants_metadata.length > 0) {
+          if(process.env.SEND_MIGRATION_COMPLETE_INFO && (process.env.SEND_MIGRATION_COMPLETE_INFO == true || process.env.SEND_MIGRATION_COMPLETE_INFO == "true")){
+            let occupantObj = occupant.toJSON()
+            let is_newly_migrated = occupant.occupants_metadata.filter((t) => {
+              if (t.key == 'is_newly_migrated') {
+                return t.value;
+              }
+            });
+            if(is_newly_migrated && is_newly_migrated.length>0){
+              is_newly_migrated = is_newly_migrated[0].value;
+            }else{
+              is_newly_migrated = null
+            }
+            if(!is_newly_migrated || (is_newly_migrated && is_newly_migrated == "true")){
+              let key =  occupant.email
+              const migrationRecord = await database.sequelize.query(`select key from status_migration where key ='${key}' and status = 'finished' and type = 'userMigration'`).then((result) => {
+                  if (!result[0] || result[0].length == 0) {
+                    return null;
+                  }
+                  let record = null
+                  for (const element of result[0]) {
+                    record = element
+                  }
+                  return record;
+                }).catch(() => {
+                  const err = ErrorCodes['370001'];
+                  throw err;
+                });
+
+                if(migrationRecord){
+                  occupantObj.occupants_metadata.push({
+                    id:occupant.dataValues.id,
+                    key:"is_newly_migrated",
+                    value:"true"
+                  })
+                  occupant = occupantObj
+                }
+            }
+          }
         }
         resolve(occupant);
       }).catch((error) => {

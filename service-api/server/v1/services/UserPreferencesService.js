@@ -49,7 +49,7 @@ class UserPreferencesService {
     ActivityLogs.addActivityLog(Entities.user_preferences.entity_name,
       Entities.user_preferences.event_name.added, obj,
       Entities.notes.event_name.added, req.user_id,
-      req.company_id, req.user_id, null);
+      req.company_id, req.user_id, null, null, req.source_IP);
     return newuserPreferences;
   }
 
@@ -88,7 +88,7 @@ class UserPreferencesService {
     ActivityLogs.addActivityLog(Entities.user_preferences.entity_name,
       Entities.user_preferences.event_name.updated,
       obj, Entities.notes.event_name.updated,
-      req.user_id, companyId, req.user_id, null);
+      req.user_id, companyId, req.user_id, null, null, req.source_IP);
     return userPreferencesUpdate;
   }
 }

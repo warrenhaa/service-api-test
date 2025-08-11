@@ -7,7 +7,8 @@ const handleErrorAsync = (func) => async (req, res, next) => {
   } catch (error) {
     const { request_id } = req;
     const code = error.statusCode || 500;
-    const responceObj = { request_id, code, message: error.message };
+    const type = error.type || "UleecoServerError";
+    const responceObj = { request_id, code, message: error.message, type };
     if (error.responseCode) {
       res.setHeader('x-response-code', error.responseCode);
       responceObj.response_code = error.responseCode;

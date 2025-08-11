@@ -22,8 +22,9 @@ class OccupantsEquipmentsDataController {
     const { body } = req;
     const { company_id } = req.body;
     const { occupant_id } = req;
+    const source_IP = req.source_IP;
     const equipmentsData = await OccupantsEquipmentsDataService.addOccupantsEquipmentsData(
-      body, company_id, occupant_id).then(async (result) => result).catch((e) => {
+      body, company_id, occupant_id, source_IP).then(async (result) => result).catch((e) => {
       const err = e;
       throw new ApplicationError(err);
     });
@@ -48,8 +49,9 @@ class OccupantsEquipmentsDataController {
     const {id} = req.query;
     const { company_id } = req.body;
     const { occupant_id } = req;
+    const source_IP = req.source_IP;
     const equipmentsData = await OccupantsEquipmentsDataService.deleteOccupantsEquipmentsData(id,
-      occupant_id, company_id)
+      occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);

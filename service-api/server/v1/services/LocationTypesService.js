@@ -18,7 +18,7 @@ class LocationTypesService {
       new: locationTypes,
     };
     ActivityLogs.addActivityLog(Entities.location_types.entity_name, Entities.location_types.event_name.added,
-      obj, Entities.notes.event_name.added, locationTypes.id, body.company_id, req.user_id, null);
+      obj, Entities.notes.event_name.added, locationTypes.id, body.company_id, req.user_id, null, null, req.source_IP);
     return locationTypes;
   }
 
@@ -64,7 +64,7 @@ class LocationTypesService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.location_types.entity_name, Entities.location_types.event_name.updated,
-        obj, Entities.notes.event_name.updated, id, updatedLocationType.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, id, updatedLocationType.company_id, req.user_id, null, null, req.source_IP);
       return updateLocationType;
     }
     return null;
@@ -81,7 +81,7 @@ class LocationTypesService {
         new: {},
       };
       ActivityLogs.addActivityLog(Entities.location_types.entity_name, Entities.location_types.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, id, req.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.deleted, id, req.company_id, req.user_id, null, null, req.source_IP);
       return deleteLocationType;
     }
     return null;

@@ -30,8 +30,8 @@ module.exports = {
     });
     await queryInterface.addIndex('categories', ['model']);
     await queryInterface.addIndex('categories', ['category_id']);
-    await queryInterface.addConstraint('categories', ['model'],
-      { type: 'unique', name: 'model_unique' });
+    await queryInterface.addConstraint('categories',
+      {fields: ['model'], type: 'unique', name: 'model_unique' });
   },
 
   down: async (queryInterface) => {

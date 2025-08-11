@@ -2,7 +2,7 @@ import express from 'express';
 import OneTouchController from '../controllers/OneTouchController';
 import OneTouchCommunicationConfigController from '../controllers/OneTouchCommunicationConfigController';
 import {
-  addOneTouchRule, updateOneTouchRules, deleteOneTouchRule, deleteMultipleOneTouchRule,
+  addOneTouchRule, updateOneTouchRules, deleteOneTouchRule, deleteMultipleOneTouchRule, uniqueActionTriggerKey,
   getOneTouchRule, getOneTouchRules, getGatewayOneTouchRules, ruleGroupsRules, oneTouchPhoneNumberArrayRule,
 } from '../middlewares/validations/OneTouch';
 import {
@@ -20,7 +20,7 @@ const {
 } = require('../helpers/Authentication');
 
 const router = express.Router();
-router.post('/', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, addOneTouchRule(), oneTouchPhoneNumberArrayRule, validation, asyncErrorHandler(OneTouchController.addOneTouchRule));
+router.post('/', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, addOneTouchRule(), uniqueActionTriggerKey, oneTouchPhoneNumberArrayRule, validation, asyncErrorHandler(OneTouchController.addOneTouchRule));
 router.put('/', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, updateOneTouchRules(), validation, asyncErrorHandler(OneTouchController.updateOneTouchRules));
 router.delete('/', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, deleteOneTouchRule(), validation, asyncErrorHandler(OneTouchController.deleteOneTouchRule));
 router.delete('/multiple', authVerification, verifyCompanyCode, verifyUserOrOccupant, getCompanyIdFromCode, deleteMultipleOneTouchRule(), validation, asyncErrorHandler(OneTouchController.deleteMultipleOneTouchRule));

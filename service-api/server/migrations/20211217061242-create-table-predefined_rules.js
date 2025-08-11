@@ -58,8 +58,9 @@ module.exports = {
         allowNull: false,
         type: Sequelize.DATE,
       },
-    }).then(() => queryInterface.addIndex('predefined_rules', ['action_code']))
-      .then(() => queryInterface.addConstraint('predefined_rules', ['action_code', 'gateway_id', 'target_device_id', 'source_device_id'], { type: 'unique' }));
+    })
+    .then(() => queryInterface.addIndex('predefined_rules', ['action_code']))
+      .then(() => queryInterface.addConstraint('predefined_rules',  {fields:['action_code', 'gateway_id', 'target_device_id', 'source_device_id'], type: 'unique' }));
   },
 
   down: async (queryInterface) => {

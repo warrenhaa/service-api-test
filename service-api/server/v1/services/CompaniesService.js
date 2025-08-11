@@ -6,7 +6,7 @@ import { createAWSCredentialPath } from '../helpers/AwsCredentials';
 import ErrorCodes from '../../errors/ErrorCodes';
 
 class CompaniesService {
-  static async createCompanies(body, userId) {
+  static async createCompanies(body, userId, source_IP) {
     const companies = await database.companies.create({
       name: body.name,
       code: body.code,
@@ -44,7 +44,7 @@ class CompaniesService {
     };
     if (companies) {
       ActivityLogs.addActivityLog(Entities.companies.entity_name, Entities.companies.event_name.added,
-        Obj, Entities.notes.event_name.added, companies.id, companies.id, userId, null);
+        Obj, Entities.notes.event_name.added, companies.id, companies.id, userId, null, source_IP);
     }
     return companies;
   }
@@ -90,7 +90,7 @@ class CompaniesService {
     return companies;
   }
 
-  static async updateCompanies(updatedata, id, userId) {
+  static async updateCompanies(updatedata, id, userId, source_IP) {
     const oldObj = {};
     const newObj = {};
     // get company data from cache if not present set
@@ -196,7 +196,7 @@ class CompaniesService {
         }
         if (Object.keys(oldObj.address).length && Object.keys(newObj.address).length > 0) {
           ActivityLogs.addActivityLog(Entities.addresses.entity_name, Entities.addresses.event_name.updated,
-            addressObj, Entities.notes.event_name.updated, companyToUpdate.address.id, companyToUpdate.id, userId, null);
+            addressObj, Entities.notes.event_name.updated, companyToUpdate.address.id, companyToUpdate.id, userId, null, source_IP);
         }
       }
       await createAWSCredentialPath(id);
@@ -213,14 +213,14 @@ class CompaniesService {
       }
       if (Object.keys(oldObj).length > 0 && Object.keys(newObj).length > 0) {
         ActivityLogs.addActivityLog(Entities.companies.entity_name, Entities.companies.event_name.updated,
-          obj, Entities.notes.event_name.updated, companyToUpdate.id, companyToUpdate.id, userId, null);
+          obj, Entities.notes.event_name.updated, companyToUpdate.id, companyToUpdate.id, userId, null, source_IP);
       }
       return updateCompaniesData[1];
     }
     return null;
   }
 
-  static async deleteCompanies(id, userId) {
+  static async deleteCompanies(id, userId, source_IP) {
     // get company data from cache else set in cache 
     const companiesToDelete = await getCompany(id).then(result => {
       return (result);
@@ -249,7 +249,7 @@ class CompaniesService {
             raw: true,
           });
           ActivityLogs.addActivityLog(Entities.companies.entity_name, Entities.companies.event_name.deleted,
-            obj, Entities.notes.event_name.deleted, companiesToDelete.id, null, userId, null);
+            obj, Entities.notes.event_name.deleted, companiesToDelete.id, null, userId, null, source_IP);
           return companiesToDelete;
         });
     }

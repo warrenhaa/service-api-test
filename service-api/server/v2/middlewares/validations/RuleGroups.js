@@ -9,8 +9,13 @@ const addRuleGroups = () => [
   body('rules', 'rules missing').optional().isArray(),
   body('rules.*.key', 'key missing or Invalid Value').exists().isString().not()
     .isEmpty(),
+    oneOf( // <-- one of the following must exist
+      [
   body('gateway_id', 'gateway_id missing or Invalid Value').exists().isUUID().not()
     .isEmpty(),
+    body('gateway_code', 'gateway_code missing').exists().not()
+        .isEmpty(),
+      ])
 ];
 
 const updateRuleGroups = () => [

@@ -7,7 +7,7 @@ import OneTouchRulesService from './OneTouchRulesService';
 import Responses from '../../utils/constants/Responses';
 
 class PreDefinedRulesService {
-  static async addPreDefinedRule(rule, action_code, gateway_id, company_id, source_device_id, target_device_id, user_id) {
+  static async addPreDefinedRule(rule, action_code, gateway_id, company_id, source_device_id, target_device_id, user_id, source_IP) {
     const ids = [];
     ids.push(source_device_id, target_device_id);
     const gateway = await database.devices.findOne({
@@ -61,13 +61,13 @@ class PreDefinedRulesService {
     const placeholdersData = {};
     ActivityLogs.addActivityLog(Entities.predefined_rules.entity_name,
       Entities.predefined_rules.event_name.added, obj, Entities.notes.event_name.added, preDefinedRuleObj.id,
-      company_id, user_id, null, placeholdersData);
+      company_id, user_id, null, placeholdersData, source_IP);
     return {
       message: Responses.responses.predefined_add_message,
     };
   }
 
-  static async deletePreDefinedRule(id, company_id, user_id) {
+  static async deletePreDefinedRule(id, company_id, user_id, source_IP) {
     const preDefinedRule = await database.predefined_rules.findOne({
       where: { id },
     }).then((result) => result);
@@ -112,7 +112,7 @@ class PreDefinedRulesService {
     const placeholdersData = {};
     ActivityLogs.addActivityLog(Entities.predefined_rules.entity_name,
       Entities.predefined_rules.event_name.deleted, obj, Entities.notes.event_name.deleted, preDefinedRule.id,
-      company_id, user_id, null, placeholdersData);
+      company_id, user_id, null, placeholdersData, source_IP);
     return {
       message: Responses.responses.predefined_delete_message,
     };

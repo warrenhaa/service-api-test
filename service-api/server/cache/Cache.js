@@ -19,6 +19,16 @@ async function setInCache(cacheKey, id, valueMappings, expireAfter) {
   }
 }
 
+async function setInCacheByKey(cacheKey, valueMappings, expireAfter) {
+  const key = `${cacheKey}`;
+  await redisClient.set(key, JSON.stringify(valueMappings));
+  if (expireAfter) {
+    redisClient.expire(key, expireAfter);
+  } else {
+    redisClient.expire(key, 7776000);
+  }
+}
+
 async function getAllFromCache(cacheKey) {
   let data = null;
   await redisClient.hgetall(`${cacheKey}`, (error, cachedData) => {
@@ -39,6 +49,20 @@ async function getAllFromCache(cacheKey) {
 
 async function deleteFromCache(cacheKey, id) {
   await redisClient.hdel(`${cacheKey}`, `${id}`);
+}
+
+async function getOneFromCacheByKey(cacheKey) {
+  let dataValues = null;
+  await redisClient.get(`${cacheKey}`, (error, cachedData) => {
+    if (error) {
+      dataValues = null;
+    }
+    if (cachedData != null) {
+      dataValues = JSON.parse(cachedData);
+    }
+  });
+
+  return dataValues;
 }
 
 async function getOneFromCache(cacheKey, id) {
@@ -159,6 +183,8 @@ async function getAllDevicesOfLocationFromCache(req) {
 
 export {
   setInCache,
+  setInCacheByKey,
+  getOneFromCacheByKey,
   deleteFromCache,
   getOneFromCache,
   getAllFromCache,

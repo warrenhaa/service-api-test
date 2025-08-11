@@ -11,7 +11,9 @@ class OccupantsPermissionsController {
     const { gateway_id, gateway_code } = req.query;
     const { company_id } = req.body;
     const { occupant_id, user_id } = req;
-    const occupants = await OccupantsPermissionsService.getOccupantsPermissions(gateway_id, company_id, occupant_id, gateway_code, user_id)
+    const { isAdmin } = req.header;
+
+    const occupants = await OccupantsPermissionsService.getOccupantsPermissions(gateway_id, company_id, occupant_id, gateway_code, user_id, isAdmin)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -25,7 +27,8 @@ class OccupantsPermissionsController {
     const { company_id } = req.body;
     const { occupant_id } = req;
     const accessToken = req.headers['x-access-token'];
-    const occupants = await OccupantsPermissionsService.addOccupantsPermissions(body, company_id, occupant_id, accessToken, req.occupantDetails.identity_id, req.request_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsPermissionsService.addOccupantsPermissions(body, company_id, occupant_id, accessToken, req.occupantDetails.identity_id, req.request_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -39,7 +42,8 @@ class OccupantsPermissionsController {
     const { body } = req;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsPermissionsService.updateOccupantsPermissions(id, body, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsPermissionsService.updateOccupantsPermissions(id, body, occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -52,7 +56,8 @@ class OccupantsPermissionsController {
     const { id } = req.body;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsPermissionsService.resendOccupantsPermissions(id, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsPermissionsService.resendOccupantsPermissions(id, occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -68,7 +73,8 @@ class OccupantsPermissionsController {
     const accessToken = req.headers['x-access-token'];
     const occupant_email = req.occupantDetails.email;
     const calledByAPI = true;
-    const occupants = await OccupantsPermissionsService.deleteOccupantsPermissions(id, occupant_id, company_id, accessToken, req.occupantDetails.identity_id, DPCommands.unshare, occupant_email, calledByAPI)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsPermissionsService.deleteOccupantsPermissions(id, occupant_id, company_id, accessToken, req.occupantDetails.identity_id, DPCommands.unshare, occupant_email, calledByAPI, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -80,7 +86,8 @@ class OccupantsPermissionsController {
   static async addOccupantsPermissionsMetadata(req, res) {
     const { company_id, key, value, occupant_permission_id } = req.body;
     const { occupant_id } = req;
-    const occupants = await OccupantsPermissionsMetadataService.addOccupantsPermissionsMetadata(key, value, occupant_permission_id, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsPermissionsMetadataService.addOccupantsPermissionsMetadata(key, value, occupant_permission_id, occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);

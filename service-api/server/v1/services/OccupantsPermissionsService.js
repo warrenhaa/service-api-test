@@ -11,6 +11,7 @@ import cameraDeviceActionQueue from '../../sqs/CameraDeviceActionQueueProducer';
 import jobsService from './JobsService';
 import UserService from './UsersService';
 import { getCompany } from '../../cache/Companies';
+import communicateWithAwsIotService from './CommunicateWithAwsIotService';
 
 const { Op, QueryTypes } = database.Sequelize;
 const moment = require('moment');
@@ -71,7 +72,7 @@ class OccupantsPermissionsService {
     return linkedCompanies;
   }
 
-  static async getOccupantsPermissions(gateway_id, companyid, occupant_id, gateway_code, user_id) {
+  static async getOccupantsPermissions(gateway_id, companyid, occupant_id, gateway_code, user_id, isAdmin = false) {
     let where = {};
     let gateway_where = {}
     const linkedCompanies = await this.getlinkedCompanies(companyid)
@@ -84,31 +85,34 @@ class OccupantsPermissionsService {
     else {
       gateway_where = { id: gateway_id }
     }
-    if (!user_id && occupant_id) {
-      const isHavePermission = await database.occupants_permissions.findOne({
-        where: {
-          [Op.or]: [
-            {
-              receiver_occupant_id: occupant_id,
-              is_temp_access: false,
-              gateway_id,
-            },
-            {
-              receiver_occupant_id: occupant_id,
-              end_time: {
-                [Op.gte]: moment().toDate(),
+
+    if(isAdmin == false) {
+      if (!user_id && occupant_id) {
+        const isHavePermission = await database.occupants_permissions.findOne({
+          where: {
+            [Op.or]: [
+              {
+                receiver_occupant_id: occupant_id,
+                is_temp_access: false,
+                gateway_id,
               },
-              start_time: {
-                [Op.lte]: moment().toDate(),
-              },
-              is_temp_access: true,
-              gateway_id,
-            }],
-        },
-      });
-      if (!isHavePermission) {
-        const err = ErrorCodes['160045'];
-        throw err;
+              {
+                receiver_occupant_id: occupant_id,
+                end_time: {
+                  [Op.gte]: moment().toDate(),
+                },
+                start_time: {
+                  [Op.lte]: moment().toDate(),
+                },
+                is_temp_access: true,
+                gateway_id,
+              }],
+          },
+        });
+        if (!isHavePermission) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
       }
     }
     const checkGatewayIdExists = await database.devices.findOne({
@@ -123,12 +127,12 @@ class OccupantsPermissionsService {
 
     const getOccupantsPermissions = await database.occupants_permissions.findAll({
       include: [{
-        attributes: ['id', 'email', 'first_name', 'last_name', 'phone_number', 'identity_id', 'cognito_id'],
+        attributes: ['id', 'email', 'first_name', 'last_name', 'identity_id', 'cognito_id'],
         model: database.occupants,
         as: 'receiver_occupant',
       },
       {
-        attributes: ['id', 'email', 'first_name', 'last_name', 'phone_number', 'identity_id', 'cognito_id'],
+        attributes: ['id', 'email', 'first_name', 'last_name', 'identity_id', 'cognito_id'],
         model: database.occupants,
         as: 'sharer_occupant',
       },
@@ -198,7 +202,18 @@ class OccupantsPermissionsService {
       end_time: body.endTime || null,
       is_temp_access: body.is_temp_access,
       access_level: body.access_level,
-    }).then((result) => result).catch((error) => {
+    }).then((result) => result).catch(async (error) => {
+      const input = {
+        Username: body.invitation_email,
+        Command: DPCommands.adminunshare,
+        DeviceID: body.device_code,
+      };
+      await jobsService.createJob(Entities.dynamodb_delete.entity_name,
+        input, body.company_id, null, null, null, body.request_id)
+        .then(async (resp) => resp)
+        .catch((err) => {
+          throw (err);
+        });
       const err = ErrorCodes['160036'];
       throw err;
     });
@@ -216,7 +231,7 @@ class OccupantsPermissionsService {
     return addOccupantsPermissions;
   }
 
-  static async addOccupantsPermissions(body, companyid, occupant_id, accessToken, identity_id, request_id) {
+  static async addOccupantsPermissions(body, companyid, occupant_id, accessToken, identity_id, request_id, source_IP) {
     let receiver_occupant_id = null;
     let sharer_occupant_id = null;
     let receiver_occupant = null;
@@ -225,6 +240,10 @@ class OccupantsPermissionsService {
     let occupant_permission_id = null;
     if (body.invitation_email) {
       body.invitation_email = body.invitation_email.toLowerCase();
+    }
+    const demoEmails = process.env.EMAIL_LIST;
+    if (demoEmails && demoEmails.includes(body.invitation_email)) {
+      return {};
     }
     const { camera_device_id_list } = body;
     // if need to share camera devices
@@ -237,6 +256,19 @@ class OccupantsPermissionsService {
         const err = ErrorCodes['800013'];
         throw err;
       }
+
+      const isHavePermission = await database.occupants_permissions.findOne({
+        where: {
+          receiver_occupant_id: occupant_id,
+          gateway_id: body.gateway_id,
+          access_level: 'O',
+        },
+      });
+      if (!isHavePermission) {
+        const err = ErrorCodes['160045'];
+        throw err;
+      }
+
       if (body.invitation_email) {
         receiver_occupant = await database.occupants.findOne({
           where:
@@ -247,8 +279,10 @@ class OccupantsPermissionsService {
           const err = ErrorCodes['160036'];
           throw err;
         });
+
         if (receiver_occupant) {
           receiver_occupant_id = receiver_occupant.id;
+
           const permissionExist = await database.occupants_permissions.findOne({
             where: {
               receiver_occupant_id,
@@ -259,6 +293,44 @@ class OccupantsPermissionsService {
             const err = ErrorCodes['160044'];
             throw err;
           }
+
+          if (gateway.type == "gateway") {
+            const company = await getCompany(companyid).then(result => {
+              return (result);
+            }).catch((error) => {
+              console.log(err);
+              throw (error);
+            });
+            if (!company) {
+              const err = ErrorCodes['000001'];
+              throw (err);
+            }
+
+            if (company.configs && company.configs.max_gateway) {
+              const gatewayCount = await database.occupants_permissions.count({
+                include: [{
+                  model: database.devices,
+                  required: true,
+                  as: 'gateway',
+                }],
+                where: {
+                  '$gateway.type$': 'gateway',
+                  receiver_occupant_id,
+                },
+                //logging: console.log,
+              })
+                .catch((err) => {
+                  console.log(err);
+                });
+
+              if (gatewayCount >= company.configs.max_gateway) {
+                const err = ErrorCodes['800039'];
+                throw err;
+              }
+            }
+          }
+
+
         } else {
           const permissionExist = await database.occupants_permissions.findOne({
             where: {
@@ -273,17 +345,7 @@ class OccupantsPermissionsService {
           }
         }
       } // end of body.invitation_email
-      const isHavePermission = await database.occupants_permissions.findOne({
-        where: {
-          receiver_occupant_id: occupant_id,
-          gateway_id: body.gateway_id,
-          access_level: 'O',
-        },
-      });
-      if (!isHavePermission) {
-        const err = ErrorCodes['160045'];
-        throw err;
-      }
+
 
       if (body.is_temp_access === true) {
         startTime = body.start_time;
@@ -366,7 +428,7 @@ class OccupantsPermissionsService {
           grid_order: await OccupantsGroupsService.getRandomGridOrder(),
         };
         await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(data,
-          body.company_id, receiver_occupant_id);
+          body.company_id, receiver_occupant_id, source_IP);
 
         let input = {
           gateway_id: body.gateway_id,
@@ -424,7 +486,7 @@ class OccupantsPermissionsService {
             };
             if (addOccupantsCameraPermissions) {
               ActivityLogs.addActivityLog(Entities.camera_occupants_permissions.entity_name, Entities.camera_occupants_permissions.event_name.added,
-                obj, Entities.notes.event_name.added, occupant_id, companyid, body.user_id, occupant_id, null);
+                obj, Entities.notes.event_name.added, occupant_id, companyid, body.user_id, occupant_id, null, source_IP);
             }
             // if occupant is registered then add object in action queue
             if (receiver_occupant) {
@@ -465,13 +527,13 @@ class OccupantsPermissionsService {
       };
       if (addOccupantsPermissions) {
         ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name, Entities.occupants_permissions.event_name.added,
-          Obj, Entities.notes.event_name.added, occupant_id, companyid, body.user_id, occupant_id, placeholdersData);
+          Obj, Entities.notes.event_name.added, occupant_id, companyid, body.user_id, occupant_id, placeholdersData, source_IP);
       }
       return addOccupantsPermissions;
     }
   }
 
-  static async updateOccupantsPermissions(id, body, occupant_id, companyId) {
+  static async updateOccupantsPermissions(id, body, occupant_id, companyId, source_IP) {
     const oldObj = {};
     const newObj = {};
     const { camera_device_id_list } = body;
@@ -558,10 +620,10 @@ class OccupantsPermissionsService {
       if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
         if (oldObj.welcome_tile_enabled == newObj.welcome_tile_enabled) {
           ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name, Entities.occupants_permissions.event_name.updated,
-            obj, Entities.notes.event_name.updated, occupant_id, companyId, body.user_id, occupant_id, placeholdersData);
+            obj, Entities.notes.event_name.updated, occupant_id, companyId, body.user_id, occupant_id, placeholdersData, source_IP);
         } else {
           ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name, Entities.occupants_permissions.event_name.welcome_tile_updated,
-            obj, Entities.notes.event_name.updated, occupant_id, companyId, body.user_id, occupant_id, placeholdersData);
+            obj, Entities.notes.event_name.updated, occupant_id, companyId, body.user_id, occupant_id, placeholdersData, source_IP);
         }
       }
     }
@@ -675,7 +737,7 @@ class OccupantsPermissionsService {
           };
           if (addOccupantsCameraPermissions) {
             ActivityLogs.addActivityLog(Entities.camera_occupants_permissions.entity_name, Entities.camera_occupants_permissions.event_name.added,
-              obj, Entities.notes.event_name.added, occupant_id, companyId, body.user_id, occupant_id, null);
+              obj, Entities.notes.event_name.added, occupant_id, companyId, body.user_id, occupant_id, null, source_IP);
           }
           // shared occupant id put in a action queue
           if (getOccupant) {
@@ -695,7 +757,7 @@ class OccupantsPermissionsService {
           }
         }// end of cameraper not exist
       } // end for
-    } else {
+    } else if (camera_device_id_list && camera_device_id_list.length == 0)  {
       const getOccupant = await database.occupants.findOne({
         where: { id: receiver_occupant_id },
       }).then((result) => {
@@ -761,7 +823,7 @@ class OccupantsPermissionsService {
     return afterUpdate;
   }
 
-  static async resendOccupantsPermissions(id, occupant_id, company_id) {
+  static async resendOccupantsPermissions(id, occupant_id, company_id, source_IP) {
     const linkedCompanies = await this.getlinkedCompanies(company_id)
       .catch((error) => {
         throw (error);
@@ -805,12 +867,12 @@ class OccupantsPermissionsService {
         receiverList: [{ email }],
       };
       ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name, Entities.occupants_permissions.event_name.resend,
-        obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, placeholdersData);
+        obj, Entities.notes.event_name.updated, occupant_id, company_id, null, occupant_id, placeholdersData, source_IP);
     }
     return getOccupantsPermissions;
   }
 
-  static async deleteOccupantsDashboardAttributes(data, company_id) {
+  static async deleteOccupantsDashboardAttributes(data, company_id, source_IP) {
     const deleteData = await database.occupants_dashboard_attributes.findOne({
       attributes: ['id', 'type', 'grid_order'],
       where: {
@@ -838,13 +900,44 @@ class OccupantsPermissionsService {
       ActivityLogs.addActivityLog(Entities.occupants_dashboard_attributes.entity_name,
         Entities.occupants_dashboard_attributes.event_name.deleted, obj,
         Entities.notes.event_name.deleted, data.occupant_id, company_id,
-        null, data.occupant_id, null);
+        null, data.occupant_id, null, source_IP);
       return deletedData;
     }
     return null;
   }
 
-  static async deleteOccupantsPermissions(id, occupant_id, companyId, accessToken, identity_id, Command, occupant_email, calledByAPI) {
+  static async publishSyncBlockProperty(company_id, gateway_code, value) {
+    var params = {
+      thingName: gateway_code,
+    };
+    const shadowData = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'getThingShadow').then((data) => data);
+    if (!shadowData) {
+      // gateway shadow not updated
+      const err = ErrorCodes['330005'];
+      throw err;
+    }
+    const property = `premium_app:sync_block`;
+    var payload = {
+      state:
+      {
+        reported: {},
+      },
+    };
+    payload.state.reported[property] = JSON.stringify(value);
+    const topic = `$aws/things/${gateway_code}/shadow/update`;
+    var params = {
+      topic,
+      payload: JSON.stringify(payload),
+    };
+    const publishShadowData = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'publish').then((data) => data);
+    if (!publishShadowData) {
+      const err = ErrorCodes['330005']; // not published the url
+      throw err;
+    }
+    return { success: true };
+  }
+
+  static async deleteOccupantsPermissions(id, occupant_id, companyId, accessToken, identity_id, Command, occupant_email, calledByAPI, source_IP) {
     const deleteOccupantsPermissions = await database.occupants_permissions.findOne({
       where: { id },
       include: [{
@@ -862,6 +955,17 @@ class OccupantsPermissionsService {
       const err = ErrorCodes['160027'];
       throw err;
     }
+    let company = await getCompany(companyId).then(result => {
+      return (result);
+    }).catch((error) => {
+      //console.log(err);
+      throw (error);
+    });
+    if (!company) {
+      const err = ErrorCodes['000001'];
+      throw (err);
+    }
+
     const adminEmail = process.env.ADMIN_EMAIL;
     const password = process.env.ADMIN_PASSWORD;
     const reqObj = {
@@ -871,15 +975,18 @@ class OccupantsPermissionsService {
     };
     const AdminData = await UserService.cognitoLogin(reqObj, adminEmail, password);
     let isActualOwner = false;
-    if (calledByAPI == true && deleteOccupantsPermissions.receiver_occupant_id == deleteOccupantsPermissions.sharer_occupant_id) {
-      isActualOwner = true
-      if (deleteOccupantsPermissions.receiver_occupant_id !== occupant_id) {
-        const err = ErrorCodes['160045'];
-        throw err;
-      }
-      if (deleteOccupantsPermissions.receiver_occupant_id == occupant_id) {
-        const err = ErrorCodes['160045'];
-        throw err;
+
+    if (company.configs && company.configs.allow_receiver_remove_sharer_permission != true) {
+      if (calledByAPI == true && deleteOccupantsPermissions.receiver_occupant_id == deleteOccupantsPermissions.sharer_occupant_id) {
+        isActualOwner = true
+        if (deleteOccupantsPermissions.receiver_occupant_id !== occupant_id) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
+        if (deleteOccupantsPermissions.receiver_occupant_id == occupant_id) {
+          const err = ErrorCodes['160045'];
+          throw err;
+        }
       }
     }
 
@@ -887,15 +994,30 @@ class OccupantsPermissionsService {
       if (AdminData.identityId != identity_id && deleteOccupantsPermissions.receiver_occupant_id == occupant_id && Command != DPCommands.adminunshare) {
         Command = DPCommands.unRegisterOwner;
       }
-      const headerParams = {
+      let headerParams = {
         Authorization: accessToken,
       };
-      const deviceFormObj = {
+      let deviceFormObj = {
         UserID: identity_id,
         Username: deleteOccupantsPermissions.receiver_occupant.email,
         Command,
         DeviceID: deleteOccupantsPermissions.gateway.device_code,
       };
+      if (company.configs && company.configs.allow_receiver_remove_sharer_permission == true) {
+        if ( deleteOccupantsPermissions.receiver_occupant_id == deleteOccupantsPermissions.sharer_occupant_id) {
+          if (deleteOccupantsPermissions.receiver_occupant_id !== occupant_id) {
+            headerParams = {
+              Authorization: AdminData.accessToken,
+            };
+            deviceFormObj = {
+              UserID:  AdminData.identityId,
+              Username: deleteOccupantsPermissions.receiver_occupant.email,
+              Command:DPCommands.adminunshare,
+              DeviceID: deleteOccupantsPermissions.gateway.device_code,
+            };
+          }
+        }
+      }
       await DeviceProvisionService.deviceProvison(headerParams, deviceFormObj, 0)
         .then((result) => {
           const { data } = result;
@@ -931,6 +1053,7 @@ class OccupantsPermissionsService {
       const err = ErrorCodes['160028'];
       throw err;
     });
+
     if (deleteOccupantsPermissions.receiver_occupant && getAllOccPerIdCameraRecords && getAllOccPerIdCameraRecords.length > 0) {
       const receiver_occupant_id = deleteOccupantsPermissions.receiver_occupant.identity_id;
       const sharer_occupant_id = identity_id;
@@ -1001,6 +1124,15 @@ class OccupantsPermissionsService {
       }
     });
     if (deleteOccupantsPermissions.gateway) {
+      const formattedDateTime = moment().format('YYYY-MM-DD HH:mm:ss.SSS')
+      let deviceListChanged = {
+        "deviceListChanged": {
+          "event": true,
+          "eventTime": formattedDateTime
+        }
+      }
+      await this.publishSyncBlockProperty(deleteOccupantsPermissions.company_id, deleteOccupantsPermissions.gateway.device_code, deviceListChanged)
+
       const placeholdersData = {
         gateway_name: deleteOccupantsPermissions.gateway.name || deleteOccupantsPermissions.gateway.device_code,
         email,
@@ -1013,7 +1145,7 @@ class OccupantsPermissionsService {
       if (DPCommands.adminunshare != Command) {
         ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name,
           Entities.occupants_permissions.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, placeholdersData);
+          obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, placeholdersData, source_IP);
       }
     }
     return deletedData;

@@ -27,7 +27,7 @@ class OccupantsNotificationTokensService {
     return getNotificationTokens;
   }
 
-  static async addOccupantsNotificationTokens(body, companyId, occupant_id) {
+  static async addOccupantsNotificationTokens(body, companyId, occupant_id, source_IP) {
     const notificationTokens = await database.occupants_notification_tokens.findOne({
       where: { token: body.token, occupant_id },
       raw: true,
@@ -64,7 +64,7 @@ class OccupantsNotificationTokensService {
       };
       if (addNotificationTokens) {
         ActivityLogs.addActivityLog(Entities.occupants_notification_tokens.entity_name, Entities.occupants_notification_tokens.event_name.added,
-          Obj, Entities.notes.event_name.added, occupant_id, companyId, null, occupant_id, null);
+          Obj, Entities.notes.event_name.added, occupant_id, companyId, null, occupant_id, null, source_IP);
       }
       return addNotificationTokens;
     }
@@ -74,7 +74,7 @@ class OccupantsNotificationTokensService {
     return updatedData;
   }
 
-  static async updateOccupantsNotificationTokens(id, body, occupant_id, companyId) {
+  static async updateOccupantsNotificationTokens(id, body, occupant_id, companyId, source_IP) {
     const oldObj = {};
     const newObj = {};
     const existingData = await this.getDataOccupantsNotificationTokens(id);
@@ -128,18 +128,17 @@ class OccupantsNotificationTokensService {
 
     if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
       ActivityLogs.addActivityLog(Entities.occupants_notification_tokens.entity_name, Entities.occupants_notification_tokens.event_name.updated,
-        obj, Entities.notes.event_name.updated, occupant_id, companyId, null, occupant_id, null);
+        obj, Entities.notes.event_name.updated, occupant_id, companyId, null, occupant_id, null, source_IP);
     }
     return afterUpdate;
   }
 
-  static async deleteOccupantsNotificationTokens(token, occupant_id, companyId) {
+  static async deleteOccupantsNotificationTokens(token, occupant_id, companyId, source_IP) {
     const deleteNotificationToken = await database.occupants_notification_tokens.findOne({
       where: { token, occupant_id },
     });
     if (!deleteNotificationToken) {
-      const err = ErrorCodes['160022'];
-      throw err;
+      return {};
     }
     const deletedData = await database.occupants_notification_tokens.destroy({
       where: { token, occupant_id },
@@ -153,7 +152,7 @@ class OccupantsNotificationTokensService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.occupants_notification_tokens.entity_name, Entities.occupants_notification_tokens.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, null, source_IP);
     return deletedData;
   }
 }

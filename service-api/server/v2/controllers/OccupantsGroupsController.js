@@ -43,7 +43,8 @@ class OccupantsGroupsController {
     const { body } = req;
     const occupantId = req.occupant_id;
     const deviceList = body.devices;
-    const occupants = await OccupantsGroupsService.addOccupantGroup(body, occupantId, deviceList)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsGroupsService.addOccupantGroup(body, occupantId, deviceList, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -56,8 +57,9 @@ class OccupantsGroupsController {
     const { id } = req.body;
     const occupantId = req.occupant_id;
     const companyId = req.company_id;
+    const source_IP = req.source_IP;
     const occupants = await OccupantsGroupsService.updateOccupantsGroup(id,
-      req.body, occupantId, companyId)
+      req.body, occupantId, companyId, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -70,7 +72,8 @@ class OccupantsGroupsController {
     const { id } = req.query;
     const occupantId = req.occupant_id;
     const companyId = req.company_id;
-    await OccupantsGroupsService.deleteOccupantGroup(id, occupantId, companyId)
+    const source_IP = req.source_IP;
+    await OccupantsGroupsService.deleteOccupantGroup(id, occupantId, companyId, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -84,8 +87,9 @@ class OccupantsGroupsController {
     const occupantId = req.occupant_id;
     const companyId = req.company_id;
     const deviceList = devices;
+    const source_IP = req.source_IP;
     const occupants = await OccupantsGroupsService.addOccupantGroupDevices(group_id,
-      deviceList, occupantId, companyId)
+      deviceList, occupantId, companyId, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -99,8 +103,9 @@ class OccupantsGroupsController {
     const occupantId = req.occupant_id;
     const companyId = req.company_id;
     const deviceList = devices;
+    const source_IP = req.source_IP;
     const occupants = await OccupantsGroupsService.deleteOccupantGroupDevices(group_id,
-      deviceList, occupantId, companyId, deviceList)
+      deviceList, occupantId, companyId, deviceList, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);

@@ -1,4 +1,4 @@
-odule.exports = {
+module.exports = {
     up: async (queryInterface) => {
         await queryInterface.sequelize.query(`
         delete from configs where key ='background_server_constants';

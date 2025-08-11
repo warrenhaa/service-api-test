@@ -58,6 +58,15 @@ class DevicesController {
     return util.send(req, res);
   }
 
+  static async changeOwner(req, res) {
+    const permission = await DevicesService.changeOwner(
+      req,
+    ).catch((error) => {
+      throw new ApplicationError(error);
+    });
+    util.setSuccess(200, permission);
+    return util.send(req, res);
+  }
   static async getAllDevicesofALocation(req, res) {
     let devices = await DevicesService.getAllDevicesOfLocation(
       req,
@@ -267,7 +276,8 @@ class DevicesController {
     const { company_id } = req.body;
     const { occupant_id } = req;
     const { user_id } = req;
-    const devices = await DevicesService.deleteDevice(device_id, company_id, occupant_id, user_id).catch((err) => {
+    const source_IP = req.source_IP;
+    const devices = await DevicesService.deleteDevice(device_id, company_id, occupant_id, user_id, source_IP, req.request_id).catch((err) => {
       throw new ApplicationError(err);
     });
     util.setSuccess(200, devices);
@@ -279,6 +289,7 @@ class DevicesController {
     const { company_id } = req.body;
     const { occupant_id } = req;
     const occupant_email = req.occupantDetails.email;
+    const source_IP = req.source_IP;
     const company = await getCompany(company_id, null).then((result) => (result)).catch((error) => {
       throw (error);
     });
@@ -287,7 +298,7 @@ class DevicesController {
       throw new ApplicationError(err);
     }
     const devices = await DevicesService.deleteGateway(command, gateway_id, company_id,
-      occupant_id, occupant_email, company.code).catch((err) => {
+      occupant_id, occupant_email, company.code, source_IP).catch((err) => {
         throw new ApplicationError(err);
       });
     util.setSuccess(200, devices);
@@ -460,9 +471,9 @@ class DevicesController {
     const typeData = ['Normal', 'RollerShutter', 'OpenClose'];
     const orderType = ['asc', 'desc'];
     // type has one of mentioned 3 values only.
-    type = (type && typeData.includes(type)) ? type : 'Normal'; // default normal 
+    type = (type && typeData.includes(type)) ? type : 'Normal'; // default normal
     // there are 2 types of order by default the order will be asc
-    order = (order && orderType.includes(order)) ? order : 'asc'; // default asc 
+    order = (order && orderType.includes(order)) ? order : 'asc'; // default asc
 
     raw_data = (raw_data) ? raw_data : false; // default false
     // pagination max size is 5000
@@ -474,6 +485,36 @@ class DevicesController {
       start_date, end_date, type, raw_data, page, limit, order, company_id)
       .catch((err) => {
         console.log("🚀 ~ file: DevicesController.js:468 ~ DevicesController ~ getHistory ~ err:", err);
+        throw new ApplicationError(err);
+      });
+    if (deviceHistory) {
+      util.setSuccess(200, deviceHistory);
+    } else {
+      const err = ErrorCodes['280000'];
+      throw new ApplicationError(err);
+    }
+    return util.send(req, res);
+  }
+  static async getKibanaHistory(req, res) {
+    // take out the inputs and validate, if not assign default value.
+    let { device_code, property_name, property_value, start_date,
+      end_date, type, raw_data, page, limit, order } = req.query;
+    const { company_id } = req.body;
+    const { occupant_id } = req;
+    const orderType = ['asc', 'desc'];
+    // type has one of mentioned 3 values only.
+    // there are 2 types of order by default the order will be asc
+    order = (order && orderType.includes(order)) ? order : 'asc'; // default asc 
+
+    // pagination max size is 5000
+    page = (page && page >= 0 && page <= 5000) ? page : 0; // max pagination size is 5000, min 0
+    // page size
+    limit = (limit && limit >= 1) ? limit : 1000; // limit default 1000
+
+    const deviceHistory = await DevicesService.getKibanaHistory(device_code, property_name, property_value,
+      start_date, end_date, page, limit, order, company_id)
+      .catch((err) => {
+        console.log("🚀 ~ file: DevicesController.js:469 ~ DevicesController ~ getHistory ~ err:", err);
         throw new ApplicationError(err);
       });
     if (deviceHistory) {
@@ -587,8 +628,8 @@ class DevicesController {
 
   static async gatewayCameraLink(req, res) {
     var { camera_device_ids, gateway_id } = req.body
-    const { occupant_id, company_id, user_id } = req;
-    const devices = await DevicesService.gatewayCameraLink(camera_device_ids, gateway_id, occupant_id, company_id, user_id, req.occupantDetails.identity_id)
+    const { occupant_id, company_id, user_id, source_IP } = req;
+    const devices = await DevicesService.gatewayCameraLink(camera_device_ids, gateway_id, occupant_id, company_id, user_id, req.occupantDetails.identity_id, source_IP)
       .catch((error) => {
         throw new ApplicationError(error);
       });
@@ -598,8 +639,8 @@ class DevicesController {
 
   static async gatewayCameraPlanLink(req, res) {
     var { camera_device_id, gateway_id, active } = req.body
-    const { occupant_id, company_id, user_id } = req;
-    const devices = await DevicesService.gatewayCameraPlanLink(camera_device_id, gateway_id, occupant_id, company_id, user_id, active, req.occupantDetails.identity_id)
+    const { occupant_id, company_id, user_id, source_IP } = req;
+    const devices = await DevicesService.gatewayCameraPlanLink(camera_device_id, gateway_id, occupant_id, company_id, user_id, active, req.occupantDetails.identity_id, source_IP)
       .catch((error) => {
         throw new ApplicationError(error);
       });
@@ -610,7 +651,9 @@ class DevicesController {
   static async gatewayCameraList(req, res) {
     var { gateway_id, gateway_code } = req.query;
     const { occupant_id, user_id } = req;
-    const devices = await DevicesService.gatewayCameraList(gateway_id, gateway_code, occupant_id, user_id)
+    const { isAdmin } = req.header;
+
+    const devices = await DevicesService.gatewayCameraList(gateway_id, gateway_code, occupant_id, user_id, isAdmin)
       .catch((error) => {
         throw new ApplicationError(error);
       });
@@ -640,7 +683,7 @@ class DevicesController {
     const filePath = path.join(__dirname, `../../../public/uploads/${req.file.filename}`);
     const key = req.file.originalname;
 
-    // get company data from cache else set in cache     
+    // get company data from cache else set in cache
     const company = await getCompany(null, company_code).then(result => {
       return (result);
     }).catch((error) => {
@@ -651,7 +694,8 @@ class DevicesController {
       throw new ApplicationError(err);
     }
     const company_id = company.id;
-    const data = await DevicesService.uploadFileOneTouch(token, company_id, filePath, occupant_id, user_id).catch((error) => {
+    const source_IP = req.source_IP;
+    const data = await DevicesService.uploadFileOneTouch(token, company_id, filePath, occupant_id, user_id, source_IP).catch((error) => {
       throw new ApplicationError(error);
     });
     util.setSuccess(200, data);
@@ -660,7 +704,7 @@ class DevicesController {
 
   static async uploadFileSchedules(req, res) {
     const { token, company_code } = req.query;
-    const { occupant_id, user_id } = req;
+    const { occupant_id, user_id, source_IP } = req;
     if (!req.file) {
       const err = ErrorCodes['470002'];
       throw new ApplicationError(err);
@@ -668,7 +712,7 @@ class DevicesController {
     const filePath = path.join(__dirname, `../../../public/uploads/${req.file.filename}`);
     const key = req.file.originalname;
 
-    // get company data from cache else set in cache    
+    // get company data from cache else set in cache
     const company = await getCompany(null, company_code).then(result => {
       return (result);
     }).catch((error) => {
@@ -679,7 +723,7 @@ class DevicesController {
       throw new ApplicationError(err);
     }
     const company_id = company.id;
-    const data = await DevicesService.uploadFileSchedules(token, company_id, filePath, occupant_id, user_id).catch((error) => {
+    const data = await DevicesService.uploadFileSchedules(token, company_id, filePath, occupant_id, user_id, source_IP).catch((error) => {
       throw new ApplicationError(error);
     });
     util.setSuccess(200, data);
@@ -688,9 +732,9 @@ class DevicesController {
 
   static async localCloudSyncup(req, res) {
     var { gateway_id } = req.body
-    const { occupant_id, company_id, user_id } = req;
+    const { occupant_id, company_id, user_id, source_IP } = req;
 
-    const response = await DevicesService.localCloudSyncup(gateway_id, occupant_id, company_id)
+    const response = await DevicesService.localCloudSyncup(gateway_id, occupant_id, company_id, source_IP)
       .catch((error) => {
         throw new ApplicationError(error);
       });
@@ -698,6 +742,30 @@ class DevicesController {
     return util.send(req, res);
   }
 
+  static async getPinCodeDetails(req, res) {
+    var { pincode } = req.query
+    const devices = await DevicesService.getPinCodeDetails(pincode)
+      .catch((err) => {
+        const { error } = JSON.parse(err.message);
+        const errorCode = ErrorCodes[error];
+        throw new ApplicationError(errorCode);
+      });
+    util.setSuccess(200, devices);
+    return util.send(req, res);
+  }
+
+  static async updateGatewaySettings(req, res) {
+    var { gateway_id,global_time_format_24_hour } = req.body
+    const { occupant_id,company_id, user_id, source_IP } = req;
+    const devices = await DevicesService.updateGatewaySettings(gateway_id,occupant_id,global_time_format_24_hour,company_id)
+      .catch((err) => {
+        const { error } = JSON.parse(err.message);
+        const errorCode = ErrorCodes[error];
+        throw new ApplicationError(errorCode);
+      });
+    util.setSuccess(200, devices);
+    return util.send(req, res);
+  }
 }
 
 export default DevicesController;

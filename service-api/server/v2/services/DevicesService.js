@@ -31,8 +31,9 @@ import OneTouchRulesService from './OneTouchRulesService';
 import SchedulesService from '../services/SchedulesService';
 import SingleControlsService from './SingleControlService';
 import cameraDeviceActionQueue from '../../sqs/CameraDeviceActionQueueProducer';
-import safe4camera from '../../sqs/safe4CameraSqs-devProducer';
 import { getCompany } from '../../cache/Companies';
+import safe4camera from '../../sqs/safe4CameraSqs-devProducer';
+const categoryb_database = require('../../categoryb_models');
 const { v4: uuidV4 } = require('uuid');
 const { executeQuery } = require('../../redshift/config')
 const AWS = require('aws-sdk');
@@ -41,13 +42,17 @@ const uuid = require('uuid');
 const { Op, QueryTypes } = database.Sequelize;
 const SITE_CHILD_LOCS = locationLevels.slice(1);
 const moment = require('moment');
-
+const axios = require('axios');
+const momentTimezone = require('moment-timezone');
 class DevicesService {
 
   static async sleep(ms) {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
+  }
+  static  convertToTimezone(utcTime, timezone) {
+      return momentTimezone.utc(utcTime).tz(timezone).format('YYYY-MM-DD HH:mm:ss.SSS');
   }
 
   static async getThingShadow(gateway_code, company_id) {
@@ -242,6 +247,129 @@ class DevicesService {
     }
     return { success: true };
   }
+  static async changeOwner(req) {
+    let { gateway_id, email } = req.body;
+
+    let occupantId = req.occupant_id
+    const accessToken = req.headers['x-access-token'];
+    // if occupant then take his default location
+    const gatewayExists = await database.devices.findOne({
+      where: { id: gateway_id },
+    }).catch(() => {
+      const err = ErrorCodes['800013'];
+      throw err;
+    });
+    if (!gatewayExists) {
+      const err = ErrorCodes['800013'];
+      throw err;
+    };
+    if (req.occupant_id && gatewayExists) {
+      let occupantPermissionExists = await database.occupants_permissions.findOne({ where: { receiver_occupant_id: req.occupant_id, sharer_occupant_id: req.occupant_id,gateway_id } })
+        .catch((err) => {
+          throw err
+        });
+      if (!occupantPermissionExists) {
+        const err = ErrorCodes['160045'];
+        throw err;
+      } else {
+        let receiverOccupant = await database.occupants.findOne({ where: { email } })
+          .catch((err) => {
+            throw err
+          });
+        if (!receiverOccupant) {
+          const err = ErrorCodes['160010'];
+          throw err;
+        } else {
+          let oldOwner = await database.occupants.findOne({ where: { id:req.occupant_id } })
+          .catch((err) => {
+            throw err
+          });
+          let receiverPermission = await database.occupants_permissions.findOne({ where: { receiver_occupant_id: receiverOccupant.id,gateway_id } })
+            .catch((err) => {
+              throw err
+            });
+
+          if (!receiverPermission) {
+            const err = ErrorCodes['160026'];
+            throw err;
+          } else {
+
+            if (receiverPermission && receiverPermission.access_level != 'O') {
+              const err = ErrorCodes['700005'];
+              throw err;
+            } else {
+              const headerParams = {
+                Authorization: accessToken,
+              };
+              let tryCount = 0;
+              let formObj = {
+                UserID: req.occupantDetails.identity_id,
+                Username: email,
+                Command: DPCommands.swapOwner,
+                DeviceID: gatewayExists.device_code
+              };
+              await DeviceProvisionService.deviceProvison(headerParams, formObj, tryCount)
+                .then(async (result) => {
+                  var data = result.data
+                  if (data.errorMessage) {
+                    const err = ErrorCodes['380001'];
+                    throw err;
+                  } else {
+                    if (data.statusCode != 200) {
+                      const err = ErrorCodes['380001'];
+                      err.message = data.body
+                      throw err;
+                    } else {
+                      return result
+                    }
+                  }
+                })
+                .catch((error) => {
+                  const err = ErrorCodes['380001'];
+                  throw err;
+                });
+              //swapping the main owner in permissions table
+              await database.occupants_permissions.update({
+                sharer_occupant_id: receiverOccupant.id
+              }, {
+                where: {
+                  id :{
+                    [Op.in]:[
+                      receiverPermission.id,
+                      occupantPermissionExists.id
+                    ]
+                  },
+                  gateway_id
+                }
+              }).catch(error => {
+                const err = ErrorCodes['700006'];
+                throw err;
+              })
+              //making recevier as owner
+              // await database.occupants_permissions.update({
+              //   sharer_occupant_id: receiverOccupant.id
+              // }, {
+              //   where: {
+              //     id: occupantPermissionExists.id
+              //   }
+              // }).catch(error => {
+              //   const err = ErrorCodes['700006'];
+              //   throw err;
+              // })
+              ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.change_owner,
+                {
+                  gateway:gatewayExists,oldOwner:oldOwner,newOwner:receiverOccupant
+                }, Entities.notes.event_name.updated, receiverPermission.id, gatewayExists.company_id, null, occupantId, null, req.source_IP);
+              return {
+                "message":"Owner Swapped Successfully"
+              }
+
+            }
+          }
+        }
+      }
+    }
+  }
   static async createDevice(req) {
     let { coordinator_device_code, coordinator_device_model, name, device_code, gateway_id, type, model, location_id, company_id,
       metadata, grid_order, bluetooth_id, mdns_id,
@@ -279,7 +407,7 @@ class DevicesService {
     if (location_id) {
       locationId = location_id
     }
-    // if occupant then take his default location 
+    // if occupant then take his default location
     if (req.occupant_id) {
       var occupantLocationObj = await database.occupants_locations.findOne({ include: [{ required: true, model: database.locations, as: 'location' }], where: { occupant_id: req.occupant_id, status: "default" } })
         .catch((err) => {
@@ -311,9 +439,9 @@ class DevicesService {
         }
       }
     }
-    //here we check device exists or not 
-    //if exists then we check location_id is attached to it or not 
-    //if attached means someone added this device already 
+    //here we check device exists or not
+    //if exists then we check location_id is attached to it or not
+    //if attached means someone added this device already
     //as every added device will have location
     if (type == 'gateway' && accessToken && req.occupant_id && (mdns_id || bluetooth_id)) {
       const headerParams = {
@@ -333,6 +461,30 @@ class DevicesService {
       if (company.configs && company.configs.device_provision_trycount) {
         tryCount = company.configs.device_provision_trycount;
       }
+
+      if (company.configs && company.configs.max_gateway) {
+
+        var gatewayCount = await database.occupants_permissions.count({
+          include: [{
+            model: database.devices,
+            required: true,
+            as: 'gateway'
+           }],
+          where: {
+            '$gateway.type$': 'gateway',
+            receiver_occupant_id: req.occupant_id
+          },
+          //logging: console.log
+        }).catch((err) => {
+          console.log(err);
+        })
+
+        if (gatewayCount >= company.configs.max_gateway) {
+          const err = ErrorCodes['800038'];
+          throw err;
+        }
+      }
+
       let deviceFormObj = {
         UserID: req.occupantDetails.identity_id,
         Username: req.occupantDetails.email,
@@ -443,12 +595,12 @@ class DevicesService {
             throw err;
           });
           //delete the groups connected on the gateway
-          await this.deleteGatewayOccupantGroups(findGateway.id, req.occupant_id, company_id)
+          await this.deleteGatewayOccupantGroups(findGateway.id, req.occupant_id, company_id, req.source_IP)
             .catch(err => {
               throw err;
             })
           //Just call device provision api  and remove record from occupants permissions table for all gateway users
-          await this.deleteOccupantPermissions(findGateway.id, req.occupant_id, company_id, req.occupantDetails.email)
+          await this.deleteOccupantPermissions(findGateway.id, req.occupant_id, company_id, req.occupantDetails.email, req.source_IP)
             .catch(err => {
               throw err;
             })
@@ -617,7 +769,7 @@ class DevicesService {
           new: device,
         };
         if (req.occupant_id && type == "gateway") {
-          var body = { gateway_id: device.id, company_id, receiver_occupant_id: req.occupant_id, invitation_email: req.occupantDetails.email, sharer_occupant_id: req.occupant_id, access_level: "O", is_temp_access: false, }
+          var body = { gateway_id: device.id, company_id, receiver_occupant_id: req.occupant_id, invitation_email: req.occupantDetails.email, sharer_occupant_id: req.occupant_id, access_level: "O", is_temp_access: false, device_code: device_code, request_id: req.request_id }
           OccupantsPermissionsService.addOccupantsPermission(body).catch((err) => {
             console.log(err);
             throw err
@@ -627,10 +779,11 @@ class DevicesService {
         if (!req.occupant_id) {
           if (type == "gateway") {
             ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.gateway_added,
-              activityLogObj, Entities.notes.event_name.added, device.id, company_id, req.user_id, null);
+              activityLogObj, Entities.notes.event_name.added, device.id, company_id, req.user_id, null, null, req.source_IP);
           } else {
             ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.added,
-              activityLogObj, Entities.notes.event_name.added, device.id, company_id, req.user_id, null);
+              activityLogObj, Entities.notes.event_name.added, device.id, company_id, req.user_id, null, null, req.source_IP);
+
             const formattedDateTime = moment().format('YYYY-MM-DD HH:mm:ss.SSS');
 
             let deviceListChanged = {
@@ -656,12 +809,11 @@ class DevicesService {
               };
             }
             let gridOrderEnabled = false;
-            //add grid order to all shared occupants  , only for purmo
             if (company.configs && company.configs.shared_devices_default_grid_order_enabled) {
               gridOrderEnabled = company.configs.shared_devices_default_grid_order_enabled;
             }
             if (type != "gateway" && gridOrderEnabled == true) {
-              //get all gateway occupant ids 
+              //get all gateway occupant ids
               var occupants_permissions = await database.occupants_permissions.findAll({ where: { gateway_id: gateway.id } })
                 .catch((error) => {
                   const err = ErrorCodes['800013'];
@@ -672,7 +824,7 @@ class DevicesService {
               if (occupants_permissions && occupants_permissions.length > 0) {
                 for (const element of occupants_permissions) {
                   if (element.receiver_occupant_id) {
-                    await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, element.receiver_occupant_id)
+                    await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, element.receiver_occupant_id, req.source_IP)
                       .catch((err) => {
                         console.log(err);
                         throw err
@@ -681,17 +833,17 @@ class DevicesService {
                 }
               }
             }
-            await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, req.occupant_id).catch((err) => {
+            await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, req.occupant_id, req.source_IP).catch((err) => {
               console.log(err);
               throw err
             });
           }
           if (type == "gateway") {
             ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.gateway_added,
-              activityLogObj, Entities.notes.event_name.added, device.id, company_id, null, req.occupant_id);
+              activityLogObj, Entities.notes.event_name.added, device.id, company_id, null, req.occupant_id, null, req.source_IP);
           } else {
             ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.added,
-              activityLogObj, Entities.notes.event_name.added, device.id, company_id, null, req.occupant_id);
+              activityLogObj, Entities.notes.event_name.added, device.id, company_id, null, req.occupant_id, null, req.source_IP);
 
             const formattedDateTime = moment().format('YYYY-MM-DD HH:mm:ss.SSS');
 
@@ -717,7 +869,7 @@ class DevicesService {
         });
         if (req.occupant_id && type == "gateway") {
           var body = {
-            gateway_id: deviceExists.id, company_id, invitation_email: req.occupantDetails.email, receiver_occupant_id: req.occupant_id, sharer_occupant_id: req.occupant_id, access_level: "O", is_temp_access: false,
+            gateway_id: deviceExists.id, company_id, invitation_email: req.occupantDetails.email, receiver_occupant_id: req.occupant_id, sharer_occupant_id: req.occupant_id, access_level: "O", is_temp_access: false, device_code: device_code, request_id: req.request_id
           }
           await OccupantsPermissionsService.addOccupantsPermission(body).catch((err) => {
             console.log(err);
@@ -750,12 +902,11 @@ class DevicesService {
             };
           }
           let gridOrderEnabled = false;
-          //add grid order to all shared occupants , only for purmo
           if (company.configs && company.configs.shared_devices_default_grid_order_enabled) {
             gridOrderEnabled = company.configs.shared_devices_default_grid_order_enabled;
           }
           if (type != "gateway" && gridOrderEnabled == true) {
-            //get all gateway occupant ids 
+            //get all gateway occupant ids
             var occupants_permissions = await database.occupants_permissions.findAll({ where: { gateway_id: gateway.id } })
               .catch((error) => {
                 const err = ErrorCodes['800013'];
@@ -766,7 +917,7 @@ class DevicesService {
             if (occupants_permissions && occupants_permissions.length > 0) {
               for (const element of occupants_permissions) {
                 if (element.receiver_occupant_id) {
-                  await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, element.receiver_occupant_id)
+                  await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, element.receiver_occupant_id, req.source_IP)
                     .catch((err) => {
                       console.log(err);
                       throw err
@@ -775,7 +926,7 @@ class DevicesService {
               }
             }
           }
-          await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, req.occupant_id).catch((err) => {
+          await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, req.occupant_id, req.source_IP).catch((err) => {
             console.log(err);
             throw err
           });
@@ -911,7 +1062,7 @@ class DevicesService {
                 grid_order: await OccupantsGroupsService.getRandomGridOrder(),
               };
               await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input,
-                company_id, req.occupant_id);
+                company_id, req.occupant_id, req.source_IP);
             }
           }
           if (req.headers['x-company-code'] !== 'purmo') {
@@ -995,7 +1146,7 @@ class DevicesService {
         if (deviceresult) {
           resultArray.push(device);
         }
-      } // end of type check      
+      } // end of type check
     }
     if (gateway_id) {
       sliderDetails = await OccupantService.getSliderGatewayDetails(gateway_id, occupant_id, company_id).catch((err) => { Logger.error("error", err) });
@@ -1253,7 +1404,7 @@ class DevicesService {
         }
         if (JSON.stringify(oldObj) !== JSON.stringify(newObj)) {
           ActivityLogs.addActivityLog(Entities.devices.entity_name, eventName,
-            obj, Entities.notes.event_name.updated, deviceToUpdate.id, req.body.company_id, req.user_id, null);
+            obj, Entities.notes.event_name.updated, deviceToUpdate.id, req.body.company_id, req.user_id, null, null, req.source_IP);
         }
         return updatedDevice;
       });
@@ -1300,7 +1451,7 @@ class DevicesService {
         for (let ele of metadata) {
           metaObj[ele.key] = ele.value
         }
-        await this.updatedDevicesMetadata(metaObj, id, req.occupant_id, req.body.company_id, req.user_id).catch((err) => {
+        await this.updatedDevicesMetadata(metaObj, id, req.occupant_id, req.body.company_id, req.user_id, req.source_IP).catch((err) => {
           throw (err);
         });
       }
@@ -1318,7 +1469,7 @@ class DevicesService {
     return null;
   }
 
-  static async updatedDevicesMetadata(metadata, device_id, occupantId, companyId, userId) {
+  static async updatedDevicesMetadata(metadata, device_id, occupantId, companyId, userId, source_IP) {
     const keys = Object.keys(metadata);
     for (const key of keys) {
       let value = metadata[key];
@@ -1375,7 +1526,7 @@ class DevicesService {
           delete deletedAfterUpdate.updated_at;
           if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
             ActivityLogs.addActivityLog(Entities.devices_metadata.entity_name, Entities.devices_metadata.event_name.updated,
-              obj, Entities.notes.event_name.updated, getMetaData.id, companyId, userId, occupantId);
+              obj, Entities.notes.event_name.updated, getMetaData.id, companyId, userId, occupantId, null, source_IP);
           }
         }
       } else {
@@ -1392,7 +1543,7 @@ class DevicesService {
             new: addMetaData,
           };
           ActivityLogs.addActivityLog(Entities.devices_metadata.entity_name, Entities.devices_metadata.event_name.added,
-            obj, Entities.notes.event_name.added, addMetaData.id, companyId, userId, occupantId);
+            obj, Entities.notes.event_name.added, addMetaData.id, companyId, userId, occupantId, null, source_IP);
         }
       }
     }
@@ -1454,7 +1605,7 @@ class DevicesService {
 
       let Unlinked = Entities.locations.event_name.device_unlinked;
       ActivityLogs.addActivityLog(Entities.locations.entity_name, Unlinked,
-        unlink_obj, Entities.notes.event_name.updated, getLocationData.id, device.company_id, req.user_id, null);
+        unlink_obj, Entities.notes.event_name.updated, getLocationData.id, device.company_id, req.user_id, null, null, req.source_IP);
     }
     const updateDevice = await database.devices.update(device, {
       where: { id: device.id },
@@ -1488,7 +1639,7 @@ class DevicesService {
       if (JSON.stringify(locationId) !== JSON.stringify(prior_locationId)) {
         let Linked = Entities.locations.event_name.device_linked;
         ActivityLogs.addActivityLog(Entities.locations.entity_name, Linked,
-          link_obj, Entities.notes.event_name.updated, updatedDevice.location_id, device.company_id, req.user_id, null);
+          link_obj, Entities.notes.event_name.updated, updatedDevice.location_id, device.company_id, req.user_id, null, null, req.source_IP);
       }
       const updated_obj = {
         old: oldLocation,
@@ -1496,7 +1647,7 @@ class DevicesService {
       };
       if (JSON.stringify(locationId) !== JSON.stringify(prior_locationId)) {
         ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.locations.event_name.updated,
-          updated_obj, Entities.notes.event_name.updated, updatedDevice.id, device.company_id, req.user_id, null);
+          updated_obj, Entities.notes.event_name.updated, updatedDevice.id, device.company_id, req.user_id, null, null, req.source_IP);
       }
       return updatedDevice;
     }).catch(() => {
@@ -1629,7 +1780,7 @@ class DevicesService {
             new: newObj,
           };
           ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.multiple_updated,
-            obj, Entities.notes.event_name.updated, newDevice.id, body.company_id, req.user_id, null);
+            obj, Entities.notes.event_name.updated, newDevice.id, body.company_id, req.user_id, null, null, req.source_IP);
         });
         return newList;
       });
@@ -1638,7 +1789,7 @@ class DevicesService {
       // check if current location type is "room" or not
       let locationTypeName = newLocation.location_type.name;
       if (locationTypeName && locationTypeName === 'room') {
-        // satrted job for linking device to the occupants.      
+        // satrted job for linking device to the occupants.
         const createdBy = req.user_id;
         const updatedBy = req.user_id;
         let input = {
@@ -1658,7 +1809,7 @@ class DevicesService {
     return null;
   }
 
-  static async deleteDevice(device_id, company_id, occupant_id, user_id) {
+  static async deleteDevice(device_id, company_id, occupant_id, user_id, source_IP, request_id) {
     await this.checkDeviceExists(device_id, company_id).then(async (device) => {
       if (device && device.type == 'gateway') {
         const err = ErrorCodes['800035'];
@@ -1740,7 +1891,7 @@ class DevicesService {
           if (singleControlDevicesArray.length == 1) {
             for (const key in singleControlDevicesArray) {
               const element = singleControlDevicesArray[key];
-              // check if the device id matches with the default device id then delete the record from SCD    
+              // check if the device id matches with the default device id then delete the record from SCD
               if (device_id == element.device_id) {
                 promiseList.push(await database.single_control_devices.destroy({
                   where: {
@@ -1782,7 +1933,7 @@ class DevicesService {
 
             // if element is present in excluded array then update SC
             if (exDefaultDevices.length >= 1) {
-              //update 
+              //update
               const new_default_device_id = exDefaultDevices[0].device_id;
               // creeting reference in device_references.
               const createDeviceReferenceObj = await this.addDeviceReference(new_default_device_id);
@@ -1836,7 +1987,7 @@ class DevicesService {
         //delete the devices from occupant groups devices
         promiseList.push(await this.deleteoccpantsGroupsDevices(device_id))
 
-        //delete the predefined rules 
+        //delete the predefined rules
         promiseList.push(await database.predefined_rules.destroy({
           where: {
             [Op.or]: [{
@@ -1874,16 +2025,41 @@ class DevicesService {
           const err = ErrorCodes['800032'];
           throw err;
         }))
-        //delete device record from device_events	
-        promiseList.push(await database.device_events.destroy({
-          where: {
-            device_code: device.device_code
-          },
-          returning: true,
-        }).catch(() => {
-          const err = ErrorCodes['800034'];
-          throw err;
-        }));
+        //delete device record from device_events
+        // promiseList.push(await database.device_events.destroy({
+        //   where: {
+        //     device_code: device.device_code
+        //   },
+        //   returning: true,
+        // }).catch(() => {
+        //   const err = ErrorCodes['800034'];
+        //   throw err;
+        // }));
+        let input = {
+          device_code: device.device_code, "deleted_at": new Date().toISOString(), "retry_count": 0
+        }
+        await jobsService.createJob('deleteDeviceEvents', input, company_id, null, null, null, request_id)
+          .then(async (resp) => resp)
+          .catch((error) => {
+            const err = ErrorCodes['800034'];
+            throw (err);
+          });
+        //delete device record from device_events
+        let categoryb_enabled = process.env.CATEGORYB_ENABLED;
+        // if ((categoryb_enabled == true || categoryb_enabled == 'true')) {
+          promiseList.push(await categoryb_database.device_events.destroy({
+            where: {
+              device_code: device.device_code
+            },
+            returning: true,
+          }).then(result => {
+            console.log("🚀 ~ DevicesService ~ delete from category B ~ result:", result)
+          }).catch((error) => {
+            console.log("🚀 ~ DevicesService ~ delete from category B ~ error:", error)
+            const err = ErrorCodes['800034'];
+            throw err;
+          }));
+        // }
         //delete device history from redshifts
         if (process.env.REDSHIFT_DB_NAME && process.env.REDSHIFT_DB_USER && process.env.REDSHIFT_DB_PASSWORD && process.env.REDSHIFT_DB_HOST && parseInt(process.env.REDSHIFT_DB_PORT)) {
           console.log("redshift delete device history data", device.device_code, process.env.REDSHIFT_DB_NAME)
@@ -1895,27 +2071,27 @@ class DevicesService {
               })
           )
         }
-        //delete occupant dashboard attributes 
+        //delete occupant dashboard attributes
         promiseList.push(await this.deleteOccupantsDashboardAttributes(device_id, company_id).catch((err) => {
           throw err;
         }));
 
-        //delete device status history 
+        //delete device status history
         // promiseList.push(await this.deleteDeviceStatusHistories(device.device_code, company_id).catch((err) => {
         //   throw err;
         // }));
 
-        //delete device schedules 
+        //delete device schedules
         promiseList.push(await this.deleteDeviceSchedules(device_id, company_id).catch((err) => {
           throw err;
         }));
 
-        //delete device from device_references 
+        //delete device from device_references
         promiseList.push(await this.deleteDeviceReferences(device_id).catch((err) => {
           throw err;
         }));
 
-        //delete one_touch_rules for device 
+        //delete one_touch_rules for device
         // if (device.gateway_id) {
         //   await database.one_touch_rules.findAll(
         //     {
@@ -1937,7 +2113,7 @@ class DevicesService {
         //               let device_mac_address = `${splitArr[3]}`;
         //               device_mac_address = new RegExp(device_mac_address, "i")
         //               if (StrngifyRule.match(device_mac_address) !== null) {
-        //                 ids.push(item.id);                                        
+        //                 ids.push(item.id);
         //               }
         //             }
         //           }
@@ -1946,7 +2122,7 @@ class DevicesService {
         //       if (ids.length > 0) {
         //         await this.deleteOneTouchRules(ids).catch(err => {
         //           throw err;
-        //         });  
+        //         });
         //         const gateway = await database.devices.findOne({
         //           where: { id: device.gateway_id },
         //           raw: true,
@@ -1959,7 +2135,7 @@ class DevicesService {
         //         const ref = oneTouchReferenceObj.id;
         //         const host = process.env.SERVICE_API_HOST ;
         //         const url = `https://${host}/api/v1/one_touch/gateway_rules?ref=${ref}`;
-        //          await OneTouchRulesService.publishJsonUrl(company_id, gateway.device_code, url);                
+        //          await OneTouchRulesService.publishJsonUrl(company_id, gateway.device_code, url);
         //       }
         //     }
         //   }).catch(err => {
@@ -2024,17 +2200,24 @@ class DevicesService {
             throw err;
           });
 
-        const publishCommand = 'sZDO:SetLeaveNetwork'
-        await this.factoryResetGateway(company_id, device.device_code, publishCommand)
-          .catch(err => {
-            throw err;
-          });
+        //get the device shadow
+        var deviceShadow = await this.getThingShadow(device.device_code, company_id).catch(err => { console.log(err); throw err; })
+        const LeaveNetwork = Object.keys(deviceShadow.properties).filter((name) => name.endsWith(":LeaveNetwork"));
+
+        if (LeaveNetwork.length > 0) {
+          const publishCommand = LeaveNetwork[0].split(':')[1] + ':SetLeaveNetwork'
+          await this.factoryResetGateway(company_id, device.device_code, publishCommand)
+            .catch(err => {
+              throw err;
+            });
+        }
+
+
         var obj = {
           new: {},
           old: device
         }
-        //get the device shadow
-        var deviceShadow = await this.getThingShadow(device.device_code, company_id).catch(err => { console.log(err); throw err; })
+
         if (deviceShadow && (deviceShadow.connected == false || deviceShadow.connected == 'false')) {
           var leaveNetworkKey = Object.keys(deviceShadow.properties).filter((name) => name.endsWith(":LeaveNetwork"));
           var leaveRequestDKey = Object.keys(deviceShadow.properties).filter((name) => name.endsWith(":LeaveRequest_d"));
@@ -2047,7 +2230,8 @@ class DevicesService {
           }
         }
         ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, company_id, company_id, user_id, occupant_id);
+          obj, Entities.notes.event_name.deleted, company_id, company_id, user_id, occupant_id, null, source_IP);
+
         const formattedDateTime = moment().format('YYYY-MM-DD HH:mm:ss.SSS');
 
         let deviceListChanged = {
@@ -2065,7 +2249,7 @@ class DevicesService {
     })
   }
 
-  static async deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email) {
+  static async deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email, source_IP) {
     const email = process.env.ADMIN_EMAIL;
     const password = process.env.ADMIN_PASSWORD;
     var reqObj = {
@@ -2074,7 +2258,7 @@ class DevicesService {
       }
     }
     const AdminData = await UserService.cognitoLogin(reqObj, email, password);
-    //get all occupants permissions,with occuoants details 
+    //get all occupants permissions,with occuoants details
     var occupantsPermissions = await database.occupants_permissions.findAll({
       include: [{
         required: true,
@@ -2125,7 +2309,7 @@ class DevicesService {
         const placeholdersData = {};
         ActivityLogs.addActivityLog(Entities.occupants_permissions.entity_name,
           Entities.occupants_permissions.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, placeholdersData);
+          obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, placeholdersData, source_IP);
       }
     }
     if (occupantsPermissions && occupantsPermissions.length > 0) {
@@ -2133,13 +2317,13 @@ class DevicesService {
       for (const element of occupantsPermissions) {
         if (element.receiver_occupant_id == element.sharer_occupant_id) {
           await DeviceProvisionService.sleep(500)
-          await OccupantsPermissionsService.deleteOccupantsPermissions(element.id, occupant_id, company_id, AdminData.accessToken, AdminData.identityId, DPCommands.adminunshare, occupant_email, calledByAPI)
+          await OccupantsPermissionsService.deleteOccupantsPermissions(element.id, occupant_id, company_id, AdminData.accessToken, AdminData.identityId, DPCommands.adminunshare, occupant_email, calledByAPI, source_IP)
             .catch((err) => {
               throw err;
             });
         } else {
           await DeviceProvisionService.sleep(500)
-          await OccupantsPermissionsService.deleteOccupantsPermissions(element.id, occupant_id, company_id, AdminData.accessToken, AdminData.identityId, DPCommands.unshare, occupant_email, calledByAPI)
+          await OccupantsPermissionsService.deleteOccupantsPermissions(element.id, occupant_id, company_id, AdminData.accessToken, AdminData.identityId, DPCommands.unshare, occupant_email, calledByAPI, source_IP)
             .catch((err) => {
               throw err;
             });
@@ -2187,6 +2371,7 @@ class DevicesService {
 
     // check with base property
     if (publishData && publishData.length > 0) {
+
       const baseSplitArray = base.split(':');
       var payload = {
         state:
@@ -2337,7 +2522,7 @@ class DevicesService {
     return { success: true };
   }
 
-  static async deleteOccupantGroup(id, gateway_id, occupant_id, company_id, groupObj) {
+  static async deleteOccupantGroup(id, gateway_id, occupant_id, company_id, groupObj, source_IP) {
     await database.occupants_groups.destroy({
       where: {
         id,
@@ -2363,11 +2548,11 @@ class DevicesService {
     };
     ActivityLogs.addActivityLog(Entities.occupants_groups.entity_name,
       Entities.occupants_groups.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, null, source_IP);
     return true
   }
 
-  static async deleteGatewayOccupantGroups(gateway_id, occupant_id, company_id) {
+  static async deleteGatewayOccupantGroups(gateway_id, occupant_id, company_id, source_IP) {
     //delete gateway one by one
     var groups = await database.occupants_groups.findAll({
       where: {
@@ -2382,7 +2567,7 @@ class DevicesService {
       var itemIds = []
       for (const group of groups) {
         itemIds.push(group.id)
-        promiseList.push(await this.deleteOccupantGroup(group.id, gateway_id, occupant_id, company_id, group))
+        promiseList.push(await this.deleteOccupantGroup(group.id, gateway_id, occupant_id, company_id, group, source_IP))
       }
       //delete groups dashboard attributes
       await this.deleteDashboardAttributes(itemIds, company_id).catch(err => {
@@ -2546,7 +2731,7 @@ class DevicesService {
   static async checkDeviceExists(id, company_id) {
     const checkDeviceExists = await database.devices.findOne({
       where: {
-        id, company_id
+        id
       }
     })
     if (!checkDeviceExists) {
@@ -2604,7 +2789,108 @@ class DevicesService {
     })
   }
 
-  static async deleteGateway(command, gateway_id, company_id, occupant_id, occupant_email, request_id, code) {
+  static async updateOneTouchCommunicationConfigs(gateway_id,occupant_id,company_id,source_IP) {
+    let one_touch_rule_ids = []
+    let one_touch_rules = await database.one_touch_rules.findAll({
+      where:{
+        gateway_id
+      }
+    }).catch(() => {
+      const err = ErrorCodes['330003'];
+      throw err;
+    })
+    if(one_touch_rules){
+      one_touch_rule_ids = one_touch_rules.map(element=>element.id)
+
+      let list =  await database.one_touch_communication_configs.findAll({
+        where: {
+          one_touch_rule_id :{
+            [Op.in]:one_touch_rule_ids
+          }
+        }
+      }).then(result => {
+        return (result)
+      }).catch(() => {
+        const err = ErrorCodes['800032'];
+        throw err;
+      })
+  
+
+      await database.one_touch_communication_configs.update({
+        phone_numbers:[],
+        emails:[]
+      },{
+        where: {
+          one_touch_rule_id :{
+            [Op.in]:one_touch_rule_ids
+          }
+        }
+      }).then(result => {
+        return (result)
+      }).catch(() => {
+        const err = ErrorCodes['330007'];
+        throw err;
+      })
+
+      ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name,
+        Entities.one_touch_communication_config.event_name.deleted,
+        list, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, {}, source_IP);
+    }
+  }
+
+  static async deleteAlertCommunicationConfigs(gateway_id,occupant_id,company_id,source_IP) {
+    let device_ids = []
+    let devices = await database.devices.findAll({
+      where:{
+        [Op.or]:[{
+          gateway_id
+        },
+        {
+          id:gateway_id
+        }]
+      }
+    }).catch(() => {
+      const err = ErrorCodes['800002'];
+      throw err;
+    })
+
+    if(devices){
+      device_ids = devices.map(element=>element.id)
+    
+    let list =  await database.alert_communication_configs.findAll({
+      where: {
+        device_id :{
+          [Op.in]:device_ids
+        }
+      }
+    }).then(result => {
+      return (result)
+    }).catch(() => {
+      const err = ErrorCodes['800032'];
+      throw err;
+    })
+
+
+    await database.alert_communication_configs.destroy({
+      where: {
+        device_id :{
+          [Op.in]:device_ids
+        }
+      }
+    }).then(result => {
+      return (result)
+    }).catch(() => {
+      const err = ErrorCodes['800032'];
+      throw err;
+    })
+
+    ActivityLogs.addActivityLog(Entities.occupants_alert_config.entity_name,
+      Entities.occupants_alert_config.event_name.deleted,
+      list, Entities.notes.event_name.deleted, occupant_id, company_id, null, occupant_id, {}, source_IP);
+    }
+  }
+
+  static async deleteGateway(command, gateway_id, company_id, occupant_id, occupant_email, request_id, code, source_IP) {
     const checkGatewayIdExists = await database.devices.findOne({
       where: { id: gateway_id },
     });
@@ -2623,6 +2909,12 @@ class DevicesService {
     if (!isHavePermission) {
       const err = ErrorCodes['160045'];
       throw err;
+    }
+    if (command == 2 || command == 3) {
+      if (checkGatewayIdExists.status == 'offline') {
+        const err = ErrorCodes['410008'];
+        throw err;
+      }
     }
     var occupantsPermissions = await database.occupants_permissions.findAll(
       {
@@ -2660,10 +2952,24 @@ class DevicesService {
     let jobObj = {};
     if (command == 1) {
       //Just call device provision api  and remove record from occupants permissions table for all gateway users
-      await this.deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email)
+      await this.deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email, source_IP)
         .catch(err => {
           throw err;
         })
+    }else if (command == 4) {
+      //Just call device provision api  and remove record from occupants permissions table for all gateway users
+      await this.deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email, source_IP)
+        .catch(err => {
+          throw err;
+        })
+      //delete gateway alert configs
+      await this.deleteAlertCommunicationConfigs(gateway_id,occupant_id,company_id,source_IP).catch(err => {
+        throw err;
+      })
+      //update onetouch alert communication configs emails and phone number list to empty
+      await this.updateOneTouchCommunicationConfigs(gateway_id,occupant_id,company_id,source_IP).catch(err => {
+        throw err;
+      })
     } else if (command == 2) {
       //update the shadow of devices
       const devices = await database.devices.findAll({
@@ -2699,6 +3005,7 @@ class DevicesService {
           promiseList.push(await this.publishDeviceName(company_id, device.device_code, propertyDeviceName, emptyDeviceName));
         }
       }
+
       await Promise.all(promiseList).then((results) => {
         return results
       }).catch(error => {
@@ -2710,12 +3017,12 @@ class DevicesService {
         throw err;
       });
       //delete the groups connected on the gateway
-      await this.deleteGatewayOccupantGroups(gateway_id, occupant_id, company_id)
+      await this.deleteGatewayOccupantGroups(gateway_id, occupant_id, company_id, source_IP)
         .catch(err => {
           throw err;
         })
       //Just call device provision api  and remove record from occupants permissions table for all gateway users
-      await this.deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email)
+      await this.deleteOccupantPermissions(gateway_id, occupant_id, company_id, occupant_email, source_IP)
         .catch(err => {
           throw err;
         })
@@ -2758,7 +3065,7 @@ class DevicesService {
         .catch((err) => {
           throw (err);
         });
-      jobObj.id = job.id; // returning jobid.
+      jobObj.id = job.id;
     }
     var obj = {
       new: { command, gateway: checkGatewayIdExists },
@@ -2786,10 +3093,12 @@ class DevicesService {
           }],
           notificationTokenList: notificationTokenLists
         };
-        ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.owner_unregistered_gateway,
-          logObj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, placeholdersData)
-          .catch(err => {
-          });
+        if (command != 3) {
+          ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.owner_unregistered_gateway,
+            logObj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, placeholdersData, source_IP)
+            .catch(err => {
+            });
+        }
       } else {
         var placeholdersData = {
           email: element.receiver_occupant.email,
@@ -2802,13 +3111,15 @@ class DevicesService {
           }],
           notificationTokenList: notificationTokenLists
         };
-        ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.gateway_unregistered,
-          logObj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, placeholdersData).catch(err => {
-          });
+        if (command != 3) {
+          ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.gateway_unregistered,
+            logObj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, placeholdersData, source_IP).catch(err => {
+            });
+        }
       }
     }
     ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.gateway_deleted,
-      obj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, {}).catch(err => {
+      obj, Entities.notes.event_name.deleted, company_id, company_id, null, occupant_id, {}, source_IP).catch(err => {
       });
     if (command == 3 && jobObj.id) {
       return { message: "Gateway deleted with commmand " + command, job_id: jobObj.id }
@@ -2919,7 +3230,7 @@ class DevicesService {
     if (before_location && before_location != null) {
       Unlinked = Entities.locations.event_name.gateway_unlinked;
       ActivityLogs.addActivityLog(Entities.locations.entity_name, Unlinked,
-        unlink_obj, Entities.notes.event_name.updated, currentLocation.id, req.company_id, req.user_id, null);
+        unlink_obj, Entities.notes.event_name.updated, currentLocation.id, req.company_id, req.user_id, null, null, req.source_IP);
     }
     if (before_location) {
       oldLocation = currentLocation;
@@ -2933,7 +3244,7 @@ class DevicesService {
     if (locationId && JSON.stringify(locationId) != JSON.stringify(before_location)) {
       Linked = Entities.locations.event_name.gateway_linked;
       ActivityLogs.addActivityLog(Entities.locations.entity_name, Linked,
-        link_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null);
+        link_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null, null, req.source_IP);
     }
     const device_obj = {
       old: oldLocation,
@@ -2948,7 +3259,7 @@ class DevicesService {
       if (before_location && JSON.stringify(locationId) != JSON.stringify(before_location)) {
         Unlinked = Entities.locations.event_name.device_unlinked;
         ActivityLogs.addActivityLog(Entities.locations.entity_name, Unlinked,
-          unlink_gateways_location_obj, Entities.notes.event_name.updated, before_location, req.company_id, req.user_id, null);
+          unlink_gateways_location_obj, Entities.notes.event_name.updated, before_location, req.company_id, req.user_id, null, null, req.source_IP);
       }
       const new_connected_gateways_devices = await database.devices.findOne({
         where: {
@@ -2963,17 +3274,17 @@ class DevicesService {
       if (locationId && JSON.stringify(locationId) != JSON.stringify(before_location)) {
         Linked = Entities.locations.event_name.device_linked;
         ActivityLogs.addActivityLog(Entities.locations.entity_name, Linked,
-          link_gateways_location_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null);
+          link_gateways_location_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null, null, req.source_IP);
       }
       if (locationId && JSON.stringify(locationId) != JSON.stringify(before_location)) {
         ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.locations.event_name.updated,
-          device_obj, Entities.notes.event_name.updated, new_connected_gateways_devices.id, req.company_id, req.user_id, null);
+          device_obj, Entities.notes.event_name.updated, new_connected_gateways_devices.id, req.company_id, req.user_id, null, null, req.source_IP);
       }
     }); // finished foreach loop
     if (JSON.stringify(updatedDeviceData.location_id) != JSON.stringify(before_location)) {
 
       ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.locations.event_name.updated,
-        device_obj, Entities.notes.event_name.updated, updatedDeviceData.id, req.company_id, req.user_id, null);
+        device_obj, Entities.notes.event_name.updated, updatedDeviceData.id, req.company_id, req.user_id, null, null, req.source_IP);
     }
     // new implementation for occupant_checkin permission removal
     // check if current location type is "room" or not
@@ -3000,7 +3311,7 @@ class DevicesService {
       const identity_id = AdminData.identityId;
       const accessToken = AdminData.accessToken;
       // call to device provision api to give access to occupants checkins
-      // if occupants are assigned to the location only then enter for loop 
+      // if occupants are assigned to the location only then enter for loop
       if (occupantsCheckinList.length > 0) {
         for (let item in occupantsCheckinList) {
           const element = occupantsCheckinList[item];
@@ -3023,19 +3334,19 @@ class DevicesService {
                 .then((result) => {
                   const { data } = result;
                   ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_removed,
-                    deviceFormObj, Entities.notes.event_name.location_access_unshared_success, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                    deviceFormObj, Entities.notes.event_name.location_access_unshared_success, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   if (data.errorMessage) {
                     ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_not_removed,
-                      deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                      deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   } else if (data.statusCode != 200) {
                     deviceFormObj.occupantId = occupant_id;
                     ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_not_removed,
-                      deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                      deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   }
                 })
                 .catch((error) => {
                   ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_not_removed,
-                    deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                    deviceFormObj, Entities.notes.event_name.location_access_unshared_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                 })
             }
           }
@@ -3117,7 +3428,7 @@ class DevicesService {
           Unlinked = Entities.locations.event_name.device_unlinked;
         }
         ActivityLogs.addActivityLog(Entities.locations.entity_name, Unlinked,
-          unlinked_obj, Entities.notes.event_name.updated, check_location_id, req.company_id, req.user_id, null);
+          unlinked_obj, Entities.notes.event_name.updated, check_location_id, req.company_id, req.user_id, null, null, req.source_IP);
       }
 
       const gateway_id = attributes.id; // checking location id after update
@@ -3143,7 +3454,7 @@ class DevicesService {
           Linked = Entities.locations.event_name.device_linked;
         }
         ActivityLogs.addActivityLog(Entities.locations.entity_name, Linked,
-          linked_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null);
+          linked_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null, null, req.source_IP);
       }
       const device_obj = {
         old: oldObj,
@@ -3159,7 +3470,7 @@ class DevicesService {
           if (check_location_id && JSON.stringify(locationId) != JSON.stringify(check_location_id)) {
             Unlinked = Entities.locations.event_name.device_unlinked;
             ActivityLogs.addActivityLog(Entities.locations.entity_name, Unlinked,
-              unlink_gateways_location_obj, Entities.notes.event_name.updated, check_location_id, req.company_id, req.user_id, null);
+              unlink_gateways_location_obj, Entities.notes.event_name.updated, check_location_id, req.company_id, req.user_id, null, null, req.source_IP);
           }
           const new_connected_gateways_devices = await database.devices.findOne({
             where: {
@@ -3174,11 +3485,11 @@ class DevicesService {
           if (JSON.stringify(locationId) != JSON.stringify(check_location_id)) {
             Linked = Entities.locations.event_name.device_linked;
             ActivityLogs.addActivityLog(Entities.locations.entity_name, Linked,
-              link_gateways_location_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null);
+              link_gateways_location_obj, Entities.notes.event_name.updated, locationId, req.company_id, req.user_id, null, null, req.source_IP);
           }
           if (JSON.stringify(locationId) != JSON.stringify(check_location_id)) {
             ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.locations.event_name.updated,
-              device_obj, Entities.notes.event_name.updated, new_connected_gateways_devices.id, req.company_id, req.user_id, null);
+              device_obj, Entities.notes.event_name.updated, new_connected_gateways_devices.id, req.company_id, req.user_id, null, null, req.source_IP);
           }
         });
         let locationTypeName = currentLocation.location_type.name;
@@ -3202,7 +3513,7 @@ class DevicesService {
 
       if (JSON.stringify(check_location_id) != JSON.stringify(locationId)) {
         ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.locations.event_name.updated,
-          device_obj, Entities.notes.event_name.updated, gateways.id, req.company_id, req.user_id, null);
+          device_obj, Entities.notes.event_name.updated, gateways.id, req.company_id, req.user_id, null, null, req.source_IP);
       }
     });
 
@@ -3249,7 +3560,7 @@ class DevicesService {
     const identity_id = AdminData.identityId;
     const accessToken = AdminData.accessToken;
     // call to device provision api to give access to occupants checkins
-    // if occupants are assigned to the location only then enter for loop 
+    // if occupants are assigned to the location only then enter for loop
     if (occupantsCheckinList.length > 0) {
       for (let item in occupantsCheckinList) {
         const element = occupantsCheckinList[item];
@@ -3274,19 +3585,19 @@ class DevicesService {
                 .then((result) => {
                   const { data } = result;
                   ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_shared,
-                    deviceFormObj, Entities.notes.event_name.location_access_success, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                    deviceFormObj, Entities.notes.event_name.location_access_success, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   if (data.errorMessage) {
                     ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_unshared,
-                      deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                      deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   } else if (data.statusCode != 200) {
                     deviceFormObj.occupantId = occupant_id;
                     ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_unshared,
-                      deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                      deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                   }
                 })
                 .catch((error) => {
                   ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.location_access_unshared,
-                    deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null);
+                    deviceFormObj, Entities.notes.event_name.location_access_failed, req.company_id, req.company_id, req.user_id, occupant_id, null, req.source_IP);
                 })
             }
           }
@@ -3452,7 +3763,7 @@ class DevicesService {
     start_date, end_date, type, raw_data, page, limit, order, company_id) {
     // declare finalList for output data
     let finalList = [];
-    // check whether device exists or not  
+    // check whether device exists or not
     const devicesData = await database.devices.findOne({ where: { device_code } }).catch((error) => {
       console.log("🚀  file: DevicesService.js:3144  DevicesService ~ error:", error)
       const err = ErrorCodes['800019'];
@@ -3468,9 +3779,9 @@ class DevicesService {
     const gateway_code = deviceCodeSplitArray[0] + "-" + deviceCodeSplitArray[1];
     const deviceCreatedAt = devicesData.registered_at || devicesData.created_at;
     // get the device shadow timezone property
-    // var params = {
-    //   thingName: gateway_code, // required 
-    // };
+    var params = {
+      thingName: gateway_code, // required
+    };
     const gateway = await database.devices.findOne({ where: { device_code: gateway_code } }).catch((error) => {
       const err = ErrorCodes['800019'];
       throw err;
@@ -3493,7 +3804,7 @@ class DevicesService {
         throw err;
       }
       var payload = JSON.parse(shadowData.payload);
-      const { reported } = payload.state; // array   
+      const { reported } = payload.state; // array
       if (!reported) {
         return { success: false };
       }
@@ -3548,14 +3859,14 @@ class DevicesService {
     let rawWhereCondition = " device_code = '" + device_code + "' and property_name = '" + property_name + "' "
 
     //create query for filters based on availability
-    //filter property_value 
+    //filter property_value
     if (property_value) {
       whereCondition = whereCondition + "and (value ->> 'new')::text =  '" + property_value + "' "
     }
     var defaultWhereCondition = whereCondition
     var openCloseWhereCondition = whereCondition
     var openCloseDefaultWhereCondition = whereCondition
-    //filter date range 
+    //filter date range
     if (start_date && end_date) {
       whereCondition = whereCondition + "and event_at between '" + start_date + "' and '" + end_date + "' "
     }
@@ -3571,7 +3882,7 @@ class DevicesService {
     if (end_date) {
       openCloseWhereCondition = openCloseWhereCondition + "and (value ->> 'new')::text = '0' "
     }
-    // finalising rawwhere condition 
+    // finalising rawwhere condition
     rawWhereCondition = whereCondition
 
     //check raw data
@@ -3593,28 +3904,33 @@ class DevicesService {
     } else {
       psqlQuery = psqlQuery + " order by event_at asc,parsed_at asc"
       rawPSQLQuery = rawPSQLQuery + " order by event_at asc,parsed_at asc limit 1 "
-      defaultPSQLQuery = defaultPSQLQuery + " order by event_at asc,parsed_at asc limit 1 "
+      defaultPSQLQuery = defaultPSQLQuery + " order by event_at desc,parsed_at desc limit 1 "
     }
 
     //add limit, offset
+    let categoryb_enabled = process.env.CATEGORYB_ENABLED;
+    let databaseName = database
+    if ((categoryb_enabled == true || categoryb_enabled == 'true')) {
+      databaseName = categoryb_database
+    }
     var offset = page * limit;
     psqlQuery = psqlQuery + " limit " + limit + " offset " + offset + " "
-    let dataList = await database.sequelize.query(psqlQuery,
+    let dataList = await databaseName.sequelize.query(psqlQuery,
       {
         raw: true
       });
 
-    let countDataList = await database.sequelize.query(psqlCountQuery,
+    let countDataList = await databaseName.sequelize.query(psqlCountQuery,
       {
         raw: true
       });
 
-    let firstRecordDataList = await database.sequelize.query(rawPSQLQuery,
+    let firstRecordDataList = await databaseName.sequelize.query(rawPSQLQuery,
       {
         raw: true
       });
 
-    let defaultDataList = await database.sequelize.query(defaultPSQLQuery,
+    let defaultDataList = await databaseName.sequelize.query(defaultPSQLQuery,
       {
         raw: true
       });
@@ -3622,7 +3938,7 @@ class DevicesService {
     if (dataList && dataList[1].rowCount < 1 && (raw_data == false || raw_data == 'false')) {
       dataList = firstRecordDataList
     }
-    // if type is normal,by default we add first record of that time duration, if raw_data is false 
+    // if type is normal,by default we add first record of that time duration, if raw_data is false
     else if ((raw_data == false || raw_data == 'false') && type == 'Normal') {
       if (dataList && firstRecordDataList && dataList[1].rows[0]["new_value"] != firstRecordDataList[1].rows[0]["new_value"]) {
         dataList[1].rows.unshift(firstRecordDataList[1].rows[0])
@@ -3633,9 +3949,11 @@ class DevicesService {
     total_count_output = (total_count_output[0] && total_count_output[0].count) ? total_count_output[0].count : dataList.length; // doubt need to take dataList[1].rows.length
 
 
-    if (dataList[1].rows.length < 1 && type == 'Normal') {
+    if (dataList[1].rows.length < 1 && (type == 'Normal' || type == 'OpenClose') ) {
       if (defaultDataList && defaultDataList[1].rows.length > 0) {
+        let timezone_start_date = this.convertToTimezone(start_date, timeZone)
         defaultDataList[1].rows[0]["event_at"] = start_date
+        defaultDataList[1].rows[0]["time_zone_event_at"] = timezone_start_date
         dataList = defaultDataList
       }
     }
@@ -3653,7 +3971,7 @@ class DevicesService {
         if (index == 0 && dataList[1].rows[index]["new_value"] == 0 && page == 0) {
           let openCloseDefaultWhere = openCloseDefaultWhereCondition + "and (value ->> 'new')::text = '1' " + "and event_at > '" + start_date + "' "
           let openCloseDefaultPSQLQuery = openClosePSQLQuery + openCloseDefaultWhere + " order by event_at asc limit 1 "
-          let openCloseRecordDataList = await database.sequelize.query(openCloseDefaultPSQLQuery,
+          let openCloseRecordDataList = await databaseName.sequelize.query(openCloseDefaultPSQLQuery,
             {
               raw: true
             });
@@ -3677,9 +3995,9 @@ class DevicesService {
           }
         }
         if (index == 0 && dataList[1].rows[index]["new_value"] == 1 && page == 0) {
-          let openCloseDefaultWhere = openCloseDefaultWhereCondition + "and (value ->> 'new')::text = '0' " + "and event_at > '" + start_date + "' "
+          let openCloseDefaultWhere = openCloseDefaultWhereCondition + "and (value ->> 'new')::text = '0' " + "and event_at > '" + start_date  + "' and event_at <= '" + end_date + "'"
           let openCloseDefaultPSQLQuery = openClosePSQLQuery + openCloseDefaultWhere + " order by event_at asc limit 1 "
-          let openCloseRecordDataList = await database.sequelize.query(openCloseDefaultPSQLQuery,
+          let openCloseRecordDataList = await databaseName.sequelize.query(openCloseDefaultPSQLQuery,
             {
               raw: true
             });
@@ -3701,6 +4019,11 @@ class DevicesService {
           }
         }
         let defaultElement = {}
+        let isDefaultClose = false
+        let defaultCloseElement = {}
+        let timezone_end_date = this.convertToTimezone(end_date, timeZone)
+        let timezone_start_date = this.convertToTimezone(start_date, timeZone)
+        let timezone_current_date = this.convertToTimezone(new Date(),timeZone)
         if (index == 0 && dataList[1].rows[index]["new_value"] == 0 && page == 0) {
           // element["open"] = moment(dataList[1].rows[index]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS')
           // element["close"] = moment(dataList[1].rows[index]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS')
@@ -3708,14 +4031,33 @@ class DevicesService {
           // total_count_output = total_count_output + 1
         } else {
           if (dataList[1].rows[index]["new_value"] == 1) {
-            defaultElement["open"] = moment(dataList[1].rows[index]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS')
+            if(typeof dataList[1].rows[index]["event_at"] != 'string'){
+              defaultElement["open"] = momentTimezone(dataList[1].rows[index]["event_at"]).tz(timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+            }else{
+              if(!dataList[1].rows[index]["event_at"].includes('Z')){
+                defaultElement["open"] = momentTimezone(dataList[1].rows[index]["event_at"]+"Z").tz(timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+              }else{
+                defaultElement["open"] = momentTimezone(dataList[1].rows[index]["event_at"]).tz(timeZone).format('YYYY-MM-DD HH:mm:ss.SSS')
+              }
+            }
             if ((index + 1 < dataList[1].rows.length) || (((parseInt(page) + 1) * limit) < parseInt(total_count_output))) {
               if ((index != dataList[1].rows.length - 1)) {
                 defaultElement["close"] = moment(dataList[1].rows[index + 1]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS')
+                if ((index + 1 == dataList[1].rows.length - 1) && moment(dataList[1].rows[index + 1]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS') < moment(end_date).utc().format('YYYY-MM-DD HH:mm:ss.SSS')) {
+                  isDefaultClose = true
+                  if (timezone_current_date > timezone_end_date) {
+                    defaultCloseElement["open"] = moment(timezone_end_date).format('YYYY-MM-DD HH:mm:ss.SSS')
+                    defaultCloseElement["close"] = moment(timezone_end_date).format('YYYY-MM-DD HH:mm:ss.SSS')
+                  } else {
+                    defaultCloseElement["close"] = moment(timezone_current_date).format('YYYY-MM-DD HH:mm:ss.SSS')
+                    defaultCloseElement["open"] = moment(timezone_current_date).format('YYYY-MM-DD HH:mm:ss.SSS')
+                  }
+                }
+                // defaultElement["close"] = moment(dataList[1].rows[index + 1]["time_zone_event_at"]).utc().format('YYYY-MM-DD HH:mm:ss.SSS')
               } else {
                 openCloseWhereCondition = openCloseWhereCondition + "and  event_at >= '" + dataList[1].rows[index]["event_at"].toISOString() + "' "
                 openClosePSQLQuery = openClosePSQLQuery + openCloseWhereCondition + " order by event_at asc limit 1 "
-                let openCloseRecordDataList = await database.sequelize.query(openClosePSQLQuery,
+                let openCloseRecordDataList = await databaseName.sequelize.query(openClosePSQLQuery,
                   {
                     raw: true
                   });
@@ -3724,10 +4066,10 @@ class DevicesService {
                 }
               }
             } else {
-              if (convertedTimestamp > end_date) {
-                defaultElement["close"] = moment(end_date).format('YYYY-MM-DD HH:mm:ss.SSS')
+              if (timezone_current_date > timezone_end_date) {
+                defaultElement["close"] = moment(timezone_end_date).format('YYYY-MM-DD HH:mm:ss.SSS')
               } else {
-                defaultElement["close"] = moment(convertedTimestamp).format('YYYY-MM-DD HH:mm:ss.SSS')
+                defaultElement["close"] = moment(timezone_current_date).format('YYYY-MM-DD HH:mm:ss.SSS')
               }
             }
             if (!elementList.includes(defaultElement)) {
@@ -3735,6 +4077,9 @@ class DevicesService {
             }
             index++
           }
+        }
+        if (isDefaultClose === true) {
+          elementList.push(defaultCloseElement)
         }
       }
       openCloseList = elementList
@@ -3768,6 +4113,76 @@ class DevicesService {
     }
 
     if (type == "OpenClose") {
+
+      if ( page == 0 &&  openCloseList.length > 0){
+              let newOpenCloseList = []
+              let record = openCloseList[0]
+              let openTime = record["open"]
+              let closeTime = record["close"]
+              let timezone_end_date = this.convertToTimezone(end_date,timeZone)
+              let timezone_start_date = this.convertToTimezone(start_date,timeZone)
+              let timezone_current_date = this.convertToTimezone(new Date(),timeZone)
+              if( moment(openTime).format('YYYY-MM-DD HH:mm:ss.SSS')  > moment(closeTime).format('YYYY-MM-DD HH:mm:ss.SSS')){
+
+                newOpenCloseList.push({
+                  "open":closeTime,
+                  "close":closeTime
+                })
+                let openCloseEndDate = timezone_current_date
+                if (timezone_current_date > end_date) {
+                  openCloseEndDate = timezone_end_date
+                }
+
+                if(moment(openTime).format('YYYY-MM-DD HH:mm:ss.SSS') > moment(openCloseEndDate).format('YYYY-MM-DD HH:mm:ss.SSS')){
+                  newOpenCloseList.push({
+                    "open":openCloseEndDate,
+                    "close":openCloseEndDate
+                  })
+                }else{
+                  newOpenCloseList.push({
+                    "open":openTime,
+                    "close":openTime
+                  })
+                }
+                if(openCloseList.length>1){
+                  for (let index = 1; index < openCloseList.length; index++) {
+                    const element = openCloseList[index];
+                    newOpenCloseList.push(element)
+                  }
+                }
+              }else if( (moment(openTime).format('YYYY-MM-DD HH:mm:ss.SSS')  == moment(closeTime).format('YYYY-MM-DD HH:mm:ss.SSS')) &&  openCloseList.length == 1){
+                let openCloseStartDate = start_date
+
+                if(moment(closeTime).format('YYYY-MM-DD HH:mm:ss.SSS') <= moment(openCloseStartDate).format('YYYY-MM-DD HH:mm:ss.SSS')){
+                 newOpenCloseList.push({
+                    "open":timezone_start_date,
+                    "close":timezone_start_date
+                  })
+                  let openCloseEndDate = timezone_current_date
+                  if (timezone_current_date > timezone_end_date) {
+                    openCloseEndDate = timezone_end_date
+                  }
+                  newOpenCloseList.push({
+                    "open":openCloseEndDate,
+                    "close":openCloseEndDate
+                  })
+                }
+              }
+              if(newOpenCloseList.length > 0){
+                openCloseList = newOpenCloseList
+              }
+
+      }
+      const uniqueArray = [];
+      const seen = [];
+      openCloseList.forEach(item => {
+        const stringified = JSON.stringify(item);
+        if (!seen.includes(stringified)) {
+          seen.push(stringified);
+          uniqueArray.push(item);
+        }
+      });
+
       return {
         total_count: parseInt(total_count_output),
         // with no order, offset group by
@@ -3775,7 +4190,7 @@ class DevicesService {
         // if data present dataList, if empty then limit 1 output
         records: finalList,
         // display records
-        open_close_records: openCloseList
+        open_close_records: uniqueArray
       };
     } else {
       return {
@@ -3787,6 +4202,189 @@ class DevicesService {
         // display records
       };
     }
+
+  }
+  static async getKibanaHistory(device_code, property_name, property_value,
+    start_date, end_date, page, limit, order, company_id) {
+    // declare finalList for output data
+    let finalList = [];
+    let total_count = 0
+    if(!limit){
+      limit = 1000
+    }
+    if(!page){
+      page = 0
+    }
+    if(order){
+      order = "asc"
+    }
+    // check whether device exists or not
+    const devicesData = await database.devices.findOne({ where: { device_code } }).catch((error) => {
+      console.log("🚀  file: DevicesService.js:3144  DevicesService ~ error:", error)
+      const err = ErrorCodes['800019'];
+      throw err;
+    });
+    if (!devicesData) {
+      const err = ErrorCodes['800019'];
+      throw err;
+    }
+    // get gateway code from device code
+    var deviceCodeSplitArray = device_code.split('-');
+    const gateway_code = deviceCodeSplitArray[0] + "-" + deviceCodeSplitArray[1];
+    // get the device shadow timezone property
+    const gateway = await database.devices.findOne({ where: { device_code: gateway_code } }).catch((error) => {
+      const err = ErrorCodes['800019'];
+      throw err;
+    });
+    if (!gateway) {
+      const err = ErrorCodes['800013'];
+      throw err;
+    }
+
+    let queryObj = {
+      "sort": [
+          {
+              "parsedAt": {
+                  "order": order,
+                  "unmapped_type": "boolean"
+              }
+          }
+      ],
+      "from": page * limit,
+      "size": limit,
+      "_source": {
+          "includes": [
+              "topic_name",
+              "parsedAt",
+              "createdAt",
+              "model",
+             property_name
+          ]
+      },
+      "query": {
+          "bool": {
+              "must": [],
+              "filter": []
+          }
+      }
+    }
+
+    queryObj.query.bool.filter.push(
+      {
+        "match_all": {}
+    }
+    )
+    queryObj.query.bool.filter.push(
+
+      {
+        "match_phrase": {
+            "topic_name": device_code
+        }
+      }
+    )
+    if(property_name && property_value){
+      queryObj.query.bool.filter.push(
+        { "match_phrase":
+        { property_name: property_value }
+        })
+    } else if(property_name){
+      queryObj.query.bool.filter.push(
+        {
+          "exists": {
+              "field":  property_name
+          }
+      }
+      )
+    }
+      queryObj.query.bool.filter.push(
+        {
+          "match_phrase": {
+              "topic_name": device_code
+          }
+      })
+
+      if (start_date && end_date) {
+        queryObj.query.bool.filter.push({
+          "range": {
+              "parsedAt": {
+                  "gte": start_date,
+                  "lte": end_date,
+                  "format": "strict_date_optional_time"
+              }
+          }
+        })
+      }
+      else if (start_date) {
+        queryObj.query.bool.filter.push({
+          "range": {
+              "parsedAt": {
+                  "gte": start_date,
+                  "format": "strict_date_optional_time"
+              }
+          }
+        })
+      }
+      else if (end_date) {
+        queryObj.query.bool.filter.push({
+          "range": {
+              "parsedAt": {
+                "lte": end_date,
+                "format": "strict_date_optional_time"
+              }
+          }
+        })
+      }
+    let username = process.env.KIBANA_USERNAME
+    let password = process.env.KIBANA_PASSWORD
+    let kibana_url = process.env.KIBANA_URL
+    // 'https://search-dev-salus-k4gjwm7t5pkkd4uxq3oxrhl6ge.us-west-2.es.amazonaws.com/salusdev_aws_thing_accepted_new-*/_search'
+          // 'https://search-saluseu-prod-wovb4ueoa6x5ndyirkxok2xx6q.eu-central-1.es.amazonaws.com/saluseu_prod_aws_thing_accepted_new-*/_search',
+
+    let data = JSON.stringify(queryObj)
+      try {
+        let config = {
+          method: 'get',
+          maxBodyLength: Infinity,
+          url: kibana_url,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          auth: {
+            username: username,
+            password: password
+          },
+          data : data
+        };
+
+        await axios.request(config)
+        .then((response) => {
+          if(response.data?.hits?.total?.value){
+            total_count = response.data.hits.total.value
+           }
+          if(response.data?.hits?.hits){
+            finalList = response.data.hits.hits.map(value=>{return value._source})
+             }
+        })
+        .catch((error) => {
+          console.log("🚀 ~ DevicesService ~ error:", error)
+          const err = ErrorCodes['280001'];
+          throw err;
+        });
+
+        } catch (error) {
+          console.log("🚀 ~ DevicesService ~ error:", error)
+          const err = ErrorCodes['280001'];
+          throw err;
+      }
+      return {
+        total_count: total_count,
+        // with no order, offset group by
+        count: finalList.length,
+        // if data present dataList, if empty then limit 1 output
+        records: finalList,
+        // display records
+      };
+
 
   }
   static async getDeviceShadows(device_codes, occupant_id, company_id, identity_id) {
@@ -3840,7 +4438,7 @@ class DevicesService {
     async function getShadow(element, company_id) {
       let deviceCode = element
       let params = {
-        thingName: element, // required 
+        thingName: element, // required
       };
       let result = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'getThingShadow')
       let finalResult = {}
@@ -3882,7 +4480,7 @@ class DevicesService {
     };
   }
   static async getUserAnalytics(table_name, device_code, time_span, start_date, end_date, company_id) {
-    // check whether device exists or not  
+    // check whether device exists or not
     const devicesData = await database.devices.findOne({ where: { device_code } }).catch((error) => {
       const err = ErrorCodes['800019'];
       throw err;
@@ -3895,7 +4493,7 @@ class DevicesService {
     var deviceCodeSplitArray = device_code.split('-');
     const gateway_code = deviceCodeSplitArray[0] + "-" + deviceCodeSplitArray[1];
     var params = {
-      thingName: gateway_code, // required 
+      thingName: gateway_code, // required
     };
     const shadowData = await communicateWithAwsIotService.communicateWithAwsIot(params, company_id, 'getThingShadow').then((data) => {
       return data
@@ -4157,8 +4755,7 @@ class DevicesService {
       coordinator_shadow: coordinatorShadow
     };
   }
-
-  static async gatewayCameraPlanLink(camera_device_id, gateway_id, occupant_id, company_id, user_id, active, identity_id) {
+  static async gatewayCameraPlanLink(camera_device_id, gateway_id, occupant_id, company_id, user_id, active, identity_id, source_IP) {
     const gatewayExist = await database.devices.findOne({
       where: {
         id: gateway_id,
@@ -4208,7 +4805,7 @@ class DevicesService {
         // check whether the plan_limitation includes plan_code or not
         if (plan_limit_keyItem.includes(plan_code)) {
           const plan_limit_value = plan_limitations[plan_code];
-          // get the count value of inner json              
+          // get the count value of inner json
           plan_limit_count = plan_limit_value['cameras'];
           const plan_code_count = await database.camera_devices.count({
             where: {
@@ -4256,7 +4853,7 @@ class DevicesService {
         new: updateCameraDevices,
       };
       ActivityLogs.addActivityLog(Entities.camera_devices.entity_name, Entities.camera_devices.event_name.updated,
-        obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null);
+        obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null, null, source_IP);
 
     } else {
       updateCameraDevices = await database.camera_devices.update(
@@ -4287,7 +4884,7 @@ class DevicesService {
         new: updateCameraDevices,
       };
       ActivityLogs.addActivityLog(Entities.camera_devices.entity_name, Entities.camera_devices.event_name.updated,
-        obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null);
+        obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null, null, source_IP);
     }
     const data = {
       occupant_id: identity_id,
@@ -4312,7 +4909,8 @@ class DevicesService {
 
     return cameraItem;
   }
-  static async gatewayCameraLink(camera_device_ids, gateway_id, occupant_id, company_id, user_id, identity_id) {
+
+  static async gatewayCameraLink(camera_device_ids, gateway_id, occupant_id, company_id, user_id, identity_id, source_IP) {
     const gatewayExist = await database.devices.findOne({
       where: {
         id: gateway_id,
@@ -4364,7 +4962,7 @@ class DevicesService {
         const err = ErrorCodes['460002']; // camera device not exists
         throw (err);
       };
-      //check provided camera hey have access or not 
+      //check provided camera hey have access or not
       const cameraDevicesOwn = await database.camera_devices.findAll({
         where: {
           occupant_id: occupant_id,
@@ -4405,7 +5003,7 @@ class DevicesService {
 
     }
 
-    //unlink camera from gateways 
+    //unlink camera from gateways
     const unlinkCameraDevices = await database.camera_devices.update(
       {
         gateway_id: null,
@@ -4422,7 +5020,7 @@ class DevicesService {
         const err = ErrorCodes['470009'];
         throw err;
       });
-    //remove camera device permissions which are unlinked from gateways 
+    //remove camera device permissions which are unlinked from gateways
     const deleteOccupantsCameraPermissions = await database.occupants_camera_permissions.destroy({
       where: {
         camera_device_id: {
@@ -4455,6 +5053,7 @@ class DevicesService {
       }
       // send this object in action queue
       cameraDeviceActionQueue.sendProducer(data);
+
       const info = {
         occupant_id: identity_id,
         camera_id: camera.camera_id,
@@ -4507,7 +5106,7 @@ class DevicesService {
 
           if (plan_limit_keyItem.includes(plan_code)) {
             const plan_limit_value = plan_limitations[plan_code];
-            // get the count value of inner json              
+            // get the count value of inner json
             plan_limit_count = plan_limit_value['cameras'];
             const plan_code_count = await database.camera_devices.count({
               where: {
@@ -4561,6 +5160,7 @@ class DevicesService {
         }
         // send this object in action queue
         cameraDeviceActionQueue.sendProducer(data);
+
         const info = {
           occupant_id: identity_id,
           camera_id: camera.camera_id,
@@ -4590,7 +5190,7 @@ class DevicesService {
       if (data && data.length > 0) {
         data.forEach((obj) => {
           ActivityLogs.addActivityLog(Entities.camera_devices.entity_name, Entities.camera_devices.event_name.updated,
-            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null);
+            obj, Entities.notes.event_name.updated, gateway_id, company_id, user_id, null, null, source_IP);
         })
       }
     }).catch((error) => {
@@ -4746,7 +5346,7 @@ class DevicesService {
         throw err;
       }
 
-      // check all the camera_device _ids present 
+      // check all the camera_device _ids present
       // if present send in output
       if (presentCameraList && presentCameraList.length > 0) {
         for (const key in presentCameraList) {
@@ -4771,8 +5371,8 @@ class DevicesService {
             gatewayLinkedCamera.push(cameraDeviceExist);
           }
         } // end of for
-      }
-    } // end of if
+      } // end of if
+    }
     return gatewayLinkedCamera;
   }
 
@@ -4819,7 +5419,7 @@ class DevicesService {
     }
   }
 
-  static async uploadFileOneTouch(token, company_id, filePath, occupant_id, user_id) {
+  static async uploadFileOneTouch(token, company_id, filePath, occupant_id, user_id, source_IP) {
     let where = {};
     const deviceReferenceExist = await database.device_references.findOne({
       where: {
@@ -4923,7 +5523,7 @@ class DevicesService {
           if (JSON.stringify(recordExist.rule) !== JSON.stringify(afterUpdateOneTouchRule.rule)) {
             ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
               Entities.one_touch_rules.event_name.updated, obj, Entities.notes.event_name.updated, recordExist.id,
-              company_id, user_id, occupant_id, placeholdersData);
+              company_id, user_id, occupant_id, placeholdersData, source_IP);
           }
         } else {
           // create new one touch record
@@ -4945,7 +5545,7 @@ class DevicesService {
           };
           const placeholdersData = {};
           ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name, Entities.one_touch_rules.event_name.added,
-            obj, Entities.notes.event_name.added, oneTouchRuleObj.id, company_id, user_id, occupant_id, placeholdersData);
+            obj, Entities.notes.event_name.added, oneTouchRuleObj.id, company_id, user_id, occupant_id, placeholdersData, source_IP);
 
         }
       } // end of for
@@ -4995,13 +5595,13 @@ class DevicesService {
         new: {}
       }
       ActivityLogs.addActivityLog(Entities.device_references.entity_name, Entities.device_references.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, gateway_id, company_id, user_id, occupant_id, null);
+        obj, Entities.notes.event_name.deleted, gateway_id, company_id, user_id, occupant_id, null, source_IP);
 
     } // end of if
 
   }
 
-  static async uploadFileSchedules(token, company_id, filePath, occupant_id, user_id) {
+  static async uploadFileSchedules(token, company_id, filePath, occupant_id, user_id, source_IP) {
 
     let calculateScheduleSize = null;
     let calculateScheduleSizeAdd = null;
@@ -5051,7 +5651,7 @@ class DevicesService {
     // remove stored file
     fs.unlinkSync(filePath);
 
-    // schedules array and for loop to get schedule 
+    // schedules array and for loop to get schedule
     const { schedules } = jsonFileData;
     if (schedules && schedules.length > 0) {
       for (const key in schedules) {
@@ -5122,7 +5722,7 @@ class DevicesService {
           new: {},
         };
         ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, deviceId, company_id, user_id, occupant_id, null);
+          obj, Entities.notes.event_name.deleted, deviceId, company_id, user_id, occupant_id, null, source_IP);
       }
     }
 
@@ -5142,7 +5742,7 @@ class DevicesService {
         };
         if (addSchedules) {
           ActivityLogs.addActivityLog(Entities.schedules.entity_name, Entities.schedules.event_name.added,
-            obj, Entities.notes.event_name.added, addSchedules.id, company_id, user_id, occupant_id, null);
+            obj, Entities.notes.event_name.added, addSchedules.id, company_id, user_id, occupant_id, null, source_IP);
         }
       }
     }
@@ -5171,7 +5771,7 @@ class DevicesService {
       new: {}
     }
     ActivityLogs.addActivityLog(Entities.device_references.entity_name, Entities.device_references.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, device_id, company_id, user_id, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, device_id, company_id, user_id, occupant_id, null, source_IP);
 
     // #1.. first check whether device_id present in scd's table or not if yes
     // #2.. get the scd_id's other connected device_id list
@@ -5189,7 +5789,7 @@ class DevicesService {
       if (allDevicesList && allDevicesList.length > 0) {
         const devicesList = lodash.map(allDevicesList, 'device_id');
         //  #3.. call the duplicate schedules function to create the same record for all the devices
-        await SchedulesService.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control")
+        await SchedulesService.updateDuplicateSchedules(device_id, devicesList, user_id, occupant_id, company_id, "single_control", source_IP)
           .then((result) => result).catch((e) => {
             const err = e;
             throw (err);
@@ -5240,7 +5840,7 @@ class DevicesService {
       return []
     }
   }
-  static async localCloudSyncup(gateway_id, occupant_id, company_id) {
+  static async localCloudSyncup(gateway_id, occupant_id, company_id, source_IP) {
     const gatewayExist = await database.devices.findOne({
       where: {
         id: gateway_id,
@@ -5296,7 +5896,7 @@ class DevicesService {
                 type: 'device',
                 grid_order: await OccupantsGroupsService.getRandomGridOrder(),
               };
-              await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, occupant_id)
+              await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(input, company_id, occupant_id, source_IP)
                 .catch((err) => {
                   throw err
                 });
@@ -5308,7 +5908,7 @@ class DevicesService {
                 }
               }
               ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.updated,
-                obj, Entities.notes.event_name.updated, findDevice.id, company_id, null, occupant_id);
+                obj, Entities.notes.event_name.updated, findDevice.id, company_id, null, occupant_id, null, source_IP);
             } else {
               let deviceCodeSplitArray = thing.split('-')
               let model = deviceCodeSplitArray[2]
@@ -5338,7 +5938,7 @@ class DevicesService {
                 new: createDevice,
               };
               ActivityLogs.addActivityLog(Entities.devices.entity_name, Entities.devices.event_name.added,
-                activityLogObj, Entities.notes.event_name.added, createDevice.id, company_id, null, occupant_id);
+                activityLogObj, Entities.notes.event_name.added, createDevice.id, company_id, null, occupant_id, null, source_IP);
             }
           }
         }
@@ -5350,5 +5950,117 @@ class DevicesService {
       return { message: "Gateway shadow not found." }
     }
   }
+    static async getPinCodeDetails(pincode){
+      const apiKey = process.env.GOOGLE_MAP_KEY
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${pincode}&key=${apiKey}`;
+      try {
+          const geocodeResponse = await axios.get(geocodeUrl);
+          if (geocodeResponse.data.status !== "OK") throw new Error("No address found");
+          const result = geocodeResponse.data.results[0];
+          const addressComponents = result.address_components;
+          let city = "", state = "", country = "";
+          addressComponents.forEach(component => {
+              if (component.types.includes("locality") || component.types.includes("postal_town") || component.types.includes("administrative_area_level_3")) {
+                  city = component.long_name;
+              }
+              if (component.types.includes("administrative_area_level_1")) {
+                  state = component.long_name;
+              }
+              if (component.types.includes("country")) {
+                  country = component.long_name;
+              }
+          });
+          const { lat, lng } = result.geometry.location;
+          const timezoneUrl = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${Math.floor(Date.now() / 1000)}&key=${apiKey}`;
+          const timezoneResponse = await axios.get(timezoneUrl);
+          if (timezoneResponse.data.status !== "OK") throw new Error("No timezone found");
+          const timezone = timezoneResponse.data.timeZoneId;
+          return { city, state, country ,timezone};
+      } catch (error) {
+          console.error("Error fetching address:", error.message);
+      }
+    }
+
+    static async updateGatewaySettings(gateway_id, occupant_id,global_time_format_24_hour,company_id) {
+      const gatewayExist = await database.devices.findOne({
+        where: {
+          id: gateway_id,
+          type: 'gateway'
+        }
+      }).then((result) => result)
+        .catch(() => {
+          const err = ErrorCodes['800013']; // gateway not found
+          throw err;
+        });
+      if (!gatewayExist) {
+        const err = ErrorCodes['800013']; // gateway not found
+        throw err;
+      }
+      const hasOccupantsPermissions = await database.occupants_permissions.findAll({
+        where: {
+          gateway_id,
+          receiver_occupant_id: occupant_id
+        }
+      }).then(result => result)
+        .catch(() => {
+          const err = ErrorCodes['490003'];
+          throw err;
+        });
+      if (!hasOccupantsPermissions || hasOccupantsPermissions.length < 1) {
+        const err = ErrorCodes['160026']; // occupant permission has no record
+        throw err;
+      }
+      if(global_time_format_24_hour == 0 || global_time_format_24_hour == 1){
+        let constant = {
+          "global_temperature_display_mode": {
+            "setProperty": "SetTemperatureDisplayMode",
+            "property": "TemperatureDisplayMode"
+          },
+          "global_time_format_24_hour": {
+            "setProperty": "SetTimeFormat24Hour",
+            "property": "TimeFormat24Hour"
+          },
+          "global_time_format_24_hour_zc": {
+            "setProperty": "SetTimeFormat24Hour",
+            "property": "TimeFormat24Hour"
+          }
+        }
+        let gateway = gatewayExist
+          
+        let devices = await database.devices.findAll({
+          where: {
+            gateway_id: gateway.id
+          }
+        }).catch((err) => {
+          throw (err);
+        });
+  
+        if (devices && devices.length > 0) {
+          let promiseList = []
+          for (const id in devices) {
+            let device = devices[id];
+            if (device.type != "coordinator_device" && [1, 0, "1", "0"].includes(global_time_format_24_hour)) {
+              var device_code = device.device_code
+              promiseList.push( OccupantService.publishDeviceProperty(company_id, device_code, constant['global_time_format_24_hour'].setProperty, parseInt(global_time_format_24_hour), constant['global_time_format_24_hour'].property))
+            } else if (device.type == "coordinator_device" && [1, 0, "1", "0"].includes(global_time_format_24_hour)) {
+              var device_code = device.device_code
+              promiseList.push(OccupantService.publishDeviceProperty(company_id, device_code, constant['global_time_format_24_hour_zc'].setProperty, parseInt(global_time_format_24_hour), constant["global_time_format_24_hour_zc"].property))
+            }
+          }
+          if (promiseList.length > 0) {
+            await Promise.all(promiseList).then((results) => {
+              return results
+            }).catch(error => {
+              // const err = ErrorCodes['160033'];
+              throw error;
+            });
+          }
+        }
+        
+      }
+      return {
+        "message":"gateway setting updated"
+      }
+    }
 }
 export default DevicesService;

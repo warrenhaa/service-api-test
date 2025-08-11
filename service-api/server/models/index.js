@@ -22,7 +22,7 @@ if (config.environment === 'production') {
     port: process.env.SPM_PROD_DB_PORT,
     dialect: 'postgres',
     dialectOption: {
-      ssl: true,
+      ssl: false,
       native: true,
     },
     logging: true,

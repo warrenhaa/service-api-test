@@ -17,7 +17,7 @@ class OneTouchCommunicationConfigService {
     return oneTouchCommunicationConfigObj;
   }
 
-  static async createOneTouchCommunicationConfigData(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, companyId, occupantId) {
+  static async createOneTouchCommunicationConfigData(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, companyId, occupantId, source_IP) {
     const createOneTouchCommunicationConfig = await database.one_touch_communication_configs.create({
       one_touch_rule_id,
       action_trigger_key,
@@ -42,7 +42,7 @@ class OneTouchCommunicationConfigService {
     const placeholdersData = {};
     ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.added,
       obj, Entities.notes.event_name.added, createOneTouchCommunicationConfig.id,
-      companyId, null, occupantId, placeholdersData);
+      companyId, null, occupantId, placeholdersData, source_IP);
     return createOneTouchCommunicationConfig;
   }
 
@@ -73,7 +73,7 @@ class OneTouchCommunicationConfigService {
     return oneTouchCommunicationConfigObj;
   }
 
-  static async addOneTouchCommunicationConfig(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, companyId, occupantId) {
+  static async addOneTouchCommunicationConfig(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, companyId, occupantId, source_IP) {
     const getOneTouchRuleObj = await database.one_touch_rules.findOne({
       where: { id: one_touch_rule_id },
       raw: true,
@@ -126,11 +126,11 @@ class OneTouchCommunicationConfigService {
     const placeholdersData = {};
     ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.added,
       obj, Entities.notes.event_name.added, createOneTouchCommunicationConfig.id,
-      companyId, null, occupantId, placeholdersData);
+      companyId, null, occupantId, placeholdersData, source_IP);
     return createOneTouchCommunicationConfig;
   }
 
-  static async updateOneTouchCommunicationConfig(id, body, companyId, occupantId) {
+  static async updateOneTouchCommunicationConfig(id, body, companyId, occupantId, source_IP) {
     const oldObj = {};
     const newObj = {};
     const oneTouchCommunicationConfig = await this.getOneTouchCommunicationConfigData(id);
@@ -190,12 +190,12 @@ class OneTouchCommunicationConfigService {
 
     if (JSON.stringify(deletedExistingData) !== JSON.stringify(deletedAfterUpdate)) {
       ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.updated,
-        obj, Entities.notes.event_name.updated, id, companyId, null, occupantId, placeholdersData);
+        obj, Entities.notes.event_name.updated, id, companyId, null, occupantId, placeholdersData, source_IP);
     }
     return afterUpdate;
   }
 
-  static async deleteOneTouchCommunicationConfig(id, companyId, occupantId) {
+  static async deleteOneTouchCommunicationConfig(id, companyId, occupantId, source_IP) {
     const oneTouchCommunicationConfig = await this.getOneTouchCommunicationConfigData(id);
     if (!oneTouchCommunicationConfig) {
       const err = ErrorCodes['330006'];
@@ -220,7 +220,7 @@ class OneTouchCommunicationConfigService {
     const placeholdersData = {};
 
     ActivityLogs.addActivityLog(Entities.one_touch_communication_config.entity_name, Entities.one_touch_communication_config.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, oneTouchCommunicationConfig.one_touch_rule_id, companyId, null, occupantId, placeholdersData);
+      obj, Entities.notes.event_name.deleted, oneTouchCommunicationConfig.one_touch_rule_id, companyId, null, occupantId, placeholdersData, source_IP);
     return {
       message: 'One touch config deleted successfully',
     };

@@ -40,7 +40,7 @@ class ModelsService {
         new: addModel,
       };
       ActivityLogs.addActivityLog(Entities.models.entity_name, Entities.models.event_name.added,
-        obj, Entities.notes.event_name.added, addModel.id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.added, addModel.id, body.company_id, req.user_id, null, null, req.source_IP);
       return addModel;
     }
   }
@@ -92,7 +92,7 @@ class ModelsService {
       new: newObj,
     };
     ActivityLogs.addActivityLog(Entities.models.entity_name, Entities.models.event_name.updated,
-      obj, Entities.notes.event_name.updated, checkModel.id, req.body.company_id, req.user_id, null);
+      obj, Entities.notes.event_name.updated, checkModel.id, req.body.company_id, req.user_id, null, null, req.source_IP);
     return getModel;
   }
 
@@ -129,7 +129,7 @@ class ModelsService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.models.entity_name, Entities.models.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, checkModel.id, body.company_id, req.user_id, null);
+      obj, Entities.notes.event_name.deleted, checkModel.id, body.company_id, req.user_id, null, null, req.source_IP);
     return {};
   }
 

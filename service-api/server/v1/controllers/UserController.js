@@ -5,7 +5,7 @@ import ApplicationError from '../../errors/ApplicationError';
 import ErrorCodes from '../../errors/ErrorCodes';
 import AccessPermissionController from './AccessPermissionController';
 import UserInvitationStatus from '../../utils/constants/UserInvitationStatus';
-
+const constantFromConfigs = require('../../cache/constantFromConfigs')
 const util = new Util();
 
 class UserController {
@@ -72,7 +72,7 @@ class UserController {
       throw new ApplicationError(err);
     } else if (invitations.status !== UserInvitationStatus.EXPIRED && invitations.status !== UserInvitationStatus.CONFIRMED) {
       req.body.company_id = invitations.company_id;
-      const user = await UsersService.addUser(req.body, invitations).then(async (userInfo) => {
+      const user = await UsersService.addUser(req.body, invitations, req.source_IP).then(async (userInfo) => {
         req.body = { ...userInfo.dataValues };
         req.body.user_id = userInfo.id;
         req.body.created_by = userInfo.id;
@@ -88,6 +88,28 @@ class UserController {
       const err = ErrorCodes['900003'];
       throw new ApplicationError(err);
     }
+    return util.send(req, res);
+  }
+  static async createAdminUser(req, res) {
+    req.body.company_id = req.company_id;
+    const user = await UsersService.addAdminUser(req.body, null, req.source_IP)
+      .then(async (userInfo) => {
+        req.body = { ...userInfo.dataValues };
+        req.body.user_id = userInfo.id;
+        req.body.created_by = userInfo.id;
+        req.user_id = userInfo.id
+        let constants = await constantFromConfigs.data('constants');
+        if (constants.DefaultAdminPermissions) {
+          req.body.permissions = constants.DefaultAdminPermissions
+          await AccessPermissionController.createAccessPermission(req).catch((err) => {
+            console.log("🚀 ~ UserController ~ user ~ err:", err)
+          });
+        }
+        return userInfo;
+      }).catch((err) => {
+        throw new ApplicationError(err);
+      });
+    util.setSuccess(200, user);
     return util.send(req, res);
   }
 

@@ -38,7 +38,7 @@ class AlertsService {
     return alerts;
   }
 
-  static async updateDeviceAlert(alert_id, company_id, occupant_id, user_id) {
+  static async updateDeviceAlert(alert_id, company_id, occupant_id, user_id, source_IP) {
     var device_alert = await database.device_alerts.findOne({
       where: {
         id: alert_id,
@@ -69,7 +69,7 @@ class AlertsService {
         },
       };
       ActivityLogs.addActivityLog(Entities.device_alerts.entity_name, Entities.device_alerts.event_name.updated,
-        obj, Entities.notes.event_name.updated, alert_id, company_id, user_id, occupant_id, null);
+        obj, Entities.notes.event_name.updated, alert_id, company_id, user_id, occupant_id, null, source_IP);
 
       var device_alert = await database.device_alerts.findOne({
         attributes: ['id', 'alert_type', 'alert_code', 'is_viewed'],

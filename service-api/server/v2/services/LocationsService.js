@@ -100,10 +100,10 @@ class LocationsService {
       new: locations
     };
     ActivityLogs.addActivityLog(Entities.locations.entity_name, Entities.locations.event_name.created,
-      obj, Entities.notes.event_name.added, locations.id, body.company_id, body.user_id, null);
+      obj, Entities.notes.event_name.added, locations.id, body.company_id, body.user_id, null, null, body.source_IP);
     if (locations.container_id) {
       ActivityLogs.addActivityLog(Entities.locations.entity_name, Entities.locations.event_name.added,
-        obj, Entities.notes.event_name.added, locations.container_id, body.company_id, body.user_id, null);
+        obj, Entities.notes.event_name.added, locations.container_id, body.company_id, body.user_id, null, null, body.source_IP);
     }
     return locations;
   }
@@ -167,7 +167,7 @@ class LocationsService {
     return location;
   }
 
-  static async updateLocation(updatedLocation, id, userId) {
+  static async updateLocation(updatedLocation, id, userId, source_IP) {
     let oldObj = {};
     let newObj = {};
     let locationUpdated = {};
@@ -282,14 +282,14 @@ class LocationsService {
           new: newObj.address,
         }
         ActivityLogs.addActivityLog(Entities.addresses.entity_name, Entities.addresses.event_name.updated,
-          address_obj, Entities.notes.event_name.updated, locationToUpdate.address_id, updatedLocation.company_id, userId, null);
+          address_obj, Entities.notes.event_name.updated, locationToUpdate.address_id, updatedLocation.company_id, userId, null, null, source_IP);
       }
       let obj = {
         old: oldObj,
         new: newObj
       };
       ActivityLogs.addActivityLog(Entities.locations.entity_name, Entities.locations.event_name.updated,
-        obj, Entities.notes.event_name.updated, id, updatedLocation.company_id, userId, null);
+        obj, Entities.notes.event_name.updated, id, updatedLocation.company_id, userId, null, null, source_IP);
 
       locationUpdated = await this.getLocation(id);
       locationUpdated.location_type = locationType;

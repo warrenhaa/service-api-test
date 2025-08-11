@@ -117,7 +117,7 @@ class InvitationService {
     };
     if (invite) {
       ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.added,
-        obj, Entities.notes.event_name.added, invite.id, body.company_id, req.user_id, null, placeholdersData);
+        obj, Entities.notes.event_name.added, invite.id, body.company_id, req.user_id, null, placeholdersData, req.source_IP);
     }
     return invite;
   }
@@ -136,7 +136,7 @@ class InvitationService {
           new: {},
         };
         ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.deleted,
-          obj, Entities.notes.event_name.deleted, inviteToDelete.id, body.company_id, req.user_id, null);
+          obj, Entities.notes.event_name.deleted, inviteToDelete.id, body.company_id, req.user_id, null, null, req.source_IP);
         return deletedInvite;
       }
     }
@@ -170,7 +170,7 @@ class InvitationService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.expired,
-        obj, Entities.notes.event_name.updated, inviteToUpdate.id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, inviteToUpdate.id, body.company_id, req.user_id, null, null, req.source_IP);
       return updateInvite;
     }
     return null;
@@ -200,7 +200,7 @@ class InvitationService {
             new: data,
           };
           ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.expired,
-            obj, Entities.notes.event_name.updated, value.id, body.company_id, req.user_id, null);
+            obj, Entities.notes.event_name.updated, value.id, body.company_id, req.user_id, null, null, req.source_IP);
         }
       }); return result;
     }).catch((err) => {
@@ -239,7 +239,7 @@ class InvitationService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.accepted,
-        obj, Entities.notes.event_name.updated, inviteToAccept.id, body.company_id, body.company_id, null);
+        obj, Entities.notes.event_name.updated, inviteToAccept.id, body.company_id, body.company_id, null, null, req.source_IP);
       const updatedInvite = await database.user_invitations.findOne({
         where: { id },
       });
@@ -270,6 +270,7 @@ class InvitationService {
       const invite_id = id;
       let expires_at = moment(new Date(updateInvite.expires_at)).utc().format(constants.datetimeconstant.date_time);
       expires_at += ' (UTC)';
+      // get company data from cache else set in cache 
       const companyDetails = await getCompany(body.company_id).then(result => {
         return (result);
       }).catch((error) => {
@@ -304,7 +305,7 @@ class InvitationService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.resent,
-        obj, Entities.notes.event_name.updated, inviteToResend.id, body.company_id, req.user_id, null, placeholdersData);
+        obj, Entities.notes.event_name.updated, inviteToResend.id, body.company_id, req.user_id, null, placeholdersData, req.source_IP);
       const updatedResend = await database.user_invitations.findOne({
         where: { id },
       });
@@ -353,7 +354,7 @@ class InvitationService {
           new: newObj,
         };
         ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.edit_permissions,
-          obj, Entities.notes.event_name.updated, inviteToEdit.id, body.company_id, req.user_id, null);
+          obj, Entities.notes.event_name.updated, inviteToEdit.id, body.company_id, req.user_id, null, null, req.source_IP);
         return data;
       });
       const updatedInvite = await database.user_invitations.findOne({
@@ -415,7 +416,7 @@ class InvitationService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.invitations.entity_name, Entities.invitations.event_name.confirmed,
-        obj, Entities.notes.event_name.updated, invite.id, companyId, req.user_id, null);
+        obj, Entities.notes.event_name.updated, invite.id, companyId, req.user_id, null, null, req.source_IP);
       return confirmedInvite;
     }
     return null;

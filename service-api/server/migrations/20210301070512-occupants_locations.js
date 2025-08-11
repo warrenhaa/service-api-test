@@ -59,7 +59,8 @@ module.exports = {
       allowNull: true,
       type: Sequelize.DATE,
     },
-  }).then(() => queryInterface.addConstraint('occupants_locations', ['company_id', 'occupant_id', 'location_id', 'status'], {
+  }).then(() => queryInterface.addConstraint('occupants_locations', {
+    fields:['company_id', 'occupant_id', 'location_id', 'status'], 
     type: 'unique',
     name: 'occupant_location_composite_key',
   })),

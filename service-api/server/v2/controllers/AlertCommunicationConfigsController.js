@@ -22,6 +22,7 @@ class AlertCommunicationConfigsController {
         sms_enabled: alert.sms_enabled,
         email_enabled: alert.email_enabled,
         notification_enabled: alert.notification_enabled,
+        source_IP: req.source_IP
       };
       addAlertCommunicationConfig = await addAlertCommunicationConfigs.addAlertCommunicationConfigs(info)
         .catch((e) => {

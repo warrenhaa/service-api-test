@@ -1,6 +1,6 @@
 module.exports = {
-  up: (queryInterface) => queryInterface.addConstraint('occupants_invitations', ['invite_code'],
-    { type: 'unique' }),
+  up: (queryInterface) => queryInterface.addConstraint('occupants_invitations', 
+    {fields:['invite_code'], type: 'unique' }),
   down: async () => {
   },
 };

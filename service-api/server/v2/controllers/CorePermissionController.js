@@ -30,8 +30,9 @@ class CorePermissionController {
     const body = { ...req.body };
     body.created_by = req.user_id;
     body.updated_by = req.user_id;
+    const source_IP = req.source_IP;
     const corePermission = await CorePermissionService.addCorePermissions(
-      body,
+      body, source_IP,
     ).catch(() => {
       const err = ErrorCodes['300001'];
       throw new ApplicationError(err);

@@ -30,6 +30,7 @@ class OccupantDashboardService {
     return data;
   }
 
+
   static async getGatewayIdList(userData) {
     const ownString = userData.Items[0].Own.replace(/\\/g, '');
     const ownObj = JSON.parse(ownString);

@@ -1,8 +1,11 @@
 module.exports = {
   up: async (queryInterface) => {
-    await queryInterface.removeConstraint('template_contents', 'template_contents_key_key');
-    await queryInterface.addConstraint('template_contents', ['key', 'language'],
-      { type: 'unique', name: 'key_language_unique_key' });
+    try {
+      await queryInterface.removeConstraint('template_contents', 'template_contents_key_key');
+    } catch (error) {
+    }
+    await queryInterface.addConstraint('template_contents', 
+      {fields:['key', 'language'], type: 'unique', name: 'key_language_unique_key' });
   },
 
   down: async (queryInterface) => {

@@ -25,6 +25,12 @@ const userCreateRule = () => [
   checkBodyAndQuery('identity_id').exists(),
 ];
 
+const userAdminCreateRule = () => [
+  checkBodyAndQuery('cognito_id').exists(),
+  checkBodyAndQuery('cognito_id').isUUID(),
+  checkBodyAndQuery('identity_id').exists(),
+];
+
 const userDeleteValidation = () => [
   param('id', 'id missing').exists().isUUID(),
   header('x-access-token', 'x-access-token missing').exists().not().isEmpty(),
@@ -32,5 +38,5 @@ const userDeleteValidation = () => [
 const userIdRule = () => [param('id').exists().isUUID()];
 
 export {
-  userBodyRule, userCreateRule, userIdRule, userDeleteValidation, loginBodyRule,
+  userBodyRule, userCreateRule, userIdRule, userDeleteValidation, loginBodyRule, userAdminCreateRule
 };

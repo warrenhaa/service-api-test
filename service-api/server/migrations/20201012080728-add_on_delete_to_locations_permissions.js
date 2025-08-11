@@ -1,10 +1,16 @@
 module.exports = {
   up: async (queryInterface) => {
-    await queryInterface.removeConstraint(
-      'locations_permissions',
-      'locations_permissions_user_id_fkey',
-    );
-    await queryInterface.addConstraint('locations_permissions', ['user_id'], {
+    try {
+      await queryInterface.removeConstraint(
+        'locations_permissions',
+        'locations_permissions_user_id_fkey',
+      );
+    } catch (error) {
+      
+    }
+
+    await queryInterface.addConstraint('locations_permissions',  {
+      fields:['user_id'],
       type: 'foreign key',
       name: 'locations_permissions_user_id_fkey',
       references: {

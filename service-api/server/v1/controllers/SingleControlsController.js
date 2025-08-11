@@ -22,7 +22,9 @@ class SingleControlsController {
     const { gateway_id, gateway_code, networkwifimac } = req.query;
     const { company_id } = req.body;
     const { occupant_id } = req;
-    const singleControls = await SingleControlService.getGatewaySingleControls(gateway_id, networkwifimac, occupant_id, gateway_code)
+    const { isAdmin } = req.header;
+
+    const singleControls = await SingleControlService.getGatewaySingleControls(gateway_id, networkwifimac, occupant_id, gateway_code, isAdmin)
       .then((result) => result).catch((err) => {
         throw (err);
       });

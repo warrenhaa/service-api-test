@@ -1,5 +1,6 @@
 module.exports = {
   up: async (queryInterface, Sequelize) => {
+    try {
     await queryInterface.removeColumn('one_touch_communication_config', 'gateway_id');
     await queryInterface.addColumn('one_touch_communication_config', 'one_touch_rule_id', {
       type: Sequelize.UUID,
@@ -9,7 +10,11 @@ module.exports = {
         key: 'id',
       },
     });
-    await queryInterface.addConstraint('one_touch_communication_config', ['one_touch_rule_id'], { type: 'unique', name: 'one_touch_rule_id-unique' });
+    } catch (error) {
+      
+    }
+ 
+    await queryInterface.addConstraint('one_touch_communication_config',  {fields:['one_touch_rule_id'], type: 'unique', name: 'one_touch_rule_id-unique' });
   },
 
   down: async (queryInterface, Sequelize) => {

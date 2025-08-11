@@ -1,4 +1,8 @@
 import { body, query, oneOf } from 'express-validator';
+import ErrorCodes from "../../../errors/ErrorCodes";
+import database from "../../../models";
+import Util from '../../../utils/Utils';
+const util = new Util();
 
 const oneTouchPhoneNumberArrayRule = (req, res, next) => {
   const { request_id } = req;
@@ -15,6 +19,13 @@ const oneTouchPhoneNumberArrayRule = (req, res, next) => {
           const { phone_numbers } = element;
           const { message } = element;
           if (phone_numbers && phone_numbers.length > 0) {
+            for (const phone_number of phone_numbers) {
+              if( phone_number.length == 0 || !phone_number.startsWith('+')) {
+                msg = 'phone_number is invalid or country code is missing';
+                break;
+              }
+            }
+
             if (!message) {
               msg = 'Text message is missing';
             }
@@ -114,10 +125,49 @@ const ruleGroupsRules = () => [
   body('rule_group_ids', 'Rule group ids missing / Invalid rule group ids').exists().isArray(),
 ];
 
+const uniqueActionTriggerKey = async (req, res, next) => {
+  const {one_touch_rules} = req.body;
+  let trigger_key = [];
+
+  if (one_touch_rules && one_touch_rules.length > 0) {
+    for (const element in one_touch_rules) {
+      const oneTouchRule = one_touch_rules[element];
+      const communicationConfigs = oneTouchRule.communication_configs;
+      const error = ErrorCodes[330014];
+
+      if (communicationConfigs && communicationConfigs.length > 0) {
+        for (const key in communicationConfigs) {
+          const data = communicationConfigs[key];
+          const {action_trigger_key} = data;
+          //make sure it unique in input
+          if (trigger_key.includes(action_trigger_key)) {
+            return util.sendError(req, res, error);
+          } else {
+            trigger_key.push(action_trigger_key);
+          }
+
+          //check unitque in db
+          const communicationRecordExist = await database.one_touch_communication_configs.findOne({
+            where: { action_trigger_key },
+            raw: true,
+          });
+
+          if (communicationRecordExist) {
+            return util.sendError(req, res, error);
+          }
+
+        }
+      }
+    }
+  }
+  next();
+};
+
+
 export {
   addOneTouchRule, updateOneTouchRule,
   deleteOneTouchRule, getOneTouchRule,
   getOneTouchRules, getGatewayOneTouchRules,
   updateOneTouchRules, ruleGroupsRules, deleteMultipleOneTouchRule,
-  oneTouchPhoneNumberArrayRule,
+  oneTouchPhoneNumberArrayRule, uniqueActionTriggerKey,
 };

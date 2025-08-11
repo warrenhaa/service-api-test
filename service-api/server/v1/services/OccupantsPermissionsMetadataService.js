@@ -5,7 +5,7 @@ import Entities from '../../utils/constants/Entities';
 import OccupantPermissionsService from './OccupantsPermissionsService';
 
 class OccupantsPermissionsMetadataService {
-  static async addOccupantsPermissionsMetadata(key, value, occupant_permission_id, occupant_id, companyId) {
+  static async addOccupantsPermissionsMetadata(key, value, occupant_permission_id, occupant_id, companyId, source_IP) {
     const occupantsPermissions = await OccupantPermissionsService
       .getDataOccupantsPermissions(occupant_permission_id)
       .then((result) => result).catch(() => {
@@ -83,7 +83,7 @@ class OccupantsPermissionsMetadataService {
         ActivityLogs.addActivityLog(Entities.occupants_permissions_metadata.entity_name,
           Entities.occupants_permissions_metadata.event_name.updated,
           obj, Entities.notes.event_name.updated, occupant_permission_id,
-          companyId, null, occupant_id);
+          companyId, null, occupant_id, null, source_IP);
       }
     } else {
       const addOccupantsPermissionsMetadata = await database.occupants_permissions_metadata.create({
@@ -102,7 +102,7 @@ class OccupantsPermissionsMetadataService {
         ActivityLogs.addActivityLog(Entities.occupants_permissions_metadata.entity_name,
           Entities.occupants_permissions_metadata.event_name.added,
           obj, Entities.notes.event_name.added, occupant_permission_id,
-          companyId, null, occupant_id);
+          companyId, null, occupant_id, null, source_IP);
       }
     }
     OccupantsPermissionsMetadata = await database.occupants_permissions_metadata.findAll({

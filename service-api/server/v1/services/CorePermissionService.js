@@ -73,15 +73,6 @@ class CorePermissionService {
               return corePermission.toJSON();
             }),
           );
-          const new_data = {};
-          new_data[key] = fields;
-          newObj = new_data;
-          const obj = {
-            old: {},
-            new: newObj,
-          };
-          ActivityLogs.addActivityLog(Entities.core_permissions.entity_name, Entities.core_permissions.event_name.added,
-            obj, Entities.notes.event_name.added, userId, body.company_id, body.user_id, null);
         }
         return permissions;
       }),
@@ -103,7 +94,7 @@ class CorePermissionService {
         new: {},
       };
       ActivityLogs.addActivityLog(Entities.core_permissions.entity_name, Entities.core_permissions.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.deleted, id, body.company_id, req.user_id, null, req.source_IP);
       return deletedInvite;
     }
     return null;
@@ -162,7 +153,7 @@ class CorePermissionService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.core_permissions.entity_name, Entities.core_permissions.event_name.updated,
-        obj, Entities.notes.event_name.updated, userId, permissionBody.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, userId, permissionBody.company_id, req.user_id, null, req.source_IP);
     }));
     return permissions;
   }

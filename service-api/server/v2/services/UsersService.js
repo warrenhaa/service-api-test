@@ -16,6 +16,8 @@ import { DPCommands } from '../../utils/constants/DeviceProvisionCommands';
 import Responses from '../../utils/constants/Responses';
 import DeviceProvisionService from './DeviceProvisionService';
 import { getCompany } from '../../cache/Companies';
+import UserInvitationStatus from '../../utils/constants/UserInvitationStatus';
+import { getOneFromCacheByKey, setInCacheByKey } from '../../cache/Cache';
 const AmazonCognitoIdentity = require('amazon-cognito-identity-js');
 
 const AWS = require('aws-sdk');
@@ -135,6 +137,25 @@ class UsersService {
 
       });
     })
+  }
+
+  static async checkTokenListInCache(email, token) {
+    const cacheKey = "jwt_reset_password:"+email;
+    let hasResetPasswordFalg = false
+
+    const jwtExpired = process.env.JWT_EXPIRED;
+    if (jwtExpired) {
+      console.log("🚀  file: OccupantRegisterService.js:100 ~ cacheKey:", cacheKey)
+      await getOneFromCacheByKey(cacheKey)
+        .then(async (result) => {
+          console.log("🚀  file: OccupantRegisterService.js:100 ~ result:", result)
+          if (result != null) {
+            hasResetPasswordFalg = true
+          }
+        });
+    }
+
+    return hasResetPasswordFalg
   }
 
   static async getUserFromCognitoId(req) {
@@ -356,13 +377,13 @@ class UsersService {
     return new Promise(async (resolve, reject) => {
       // get company data from cache if not present set
       const company = await getCompany(companyId).then(result => {
-        return (result);  
+        return (result);
       }).catch((error) => {
-        reject (error);
-      });   
+        reject(error);
+      });
       if (!company) {
-        const err = ErrorCodes['000001']; // company not found
-        reject (err);
+        const err = ErrorCodes['000001'];
+        reject(err);
       }
       const companyCreds = company;
       AWS.config.update({
@@ -383,6 +404,139 @@ class UsersService {
         }// successful response
       });
     });
+  }
+
+  static async getUserGroups(email, companyId) {
+    return new Promise(async (resolve, reject) => {
+      // get company data from cache if not present set
+      const company = await getCompany(companyId).then(result => {
+        return (result);
+      }).catch((error) => {
+        reject(error);
+      });
+      if (!company) {
+        const err = ErrorCodes['000001'];
+        reject(err);
+      }
+      const companyCreds = company;
+      AWS.config.update({
+        region: companyCreds.aws_region,
+        accessKeyId: companyCreds.aws_iam_access_key,
+        secretAccessKey: companyCreds.aws_iam_access_secret,
+      });
+      const cognitoidentityserviceprovider = new AWS.CognitoIdentityServiceProvider();
+      const params = {
+        UserPoolId: companyCreds.aws_cognito_user_pool,
+        Username: email, // The user to retrieve
+      };
+      cognitoidentityserviceprovider.adminListGroupsForUser(params, (err, data) => {
+        if (err) {
+          console.error("Error:", err);
+          reject(err);
+        }
+        else {
+          resolve(data.Groups);
+        }
+      });
+
+
+    });
+  }
+
+  static async addAdminUser(body, source_IP) {
+    const filter = `sub = "${body.cognito_id}"`;
+    const userDetails = await this.getUserCredentials(filter, body.company_id).catch((err) => { throw err; });
+    let phoneNumber = null;
+    let name = null;
+    let email = null;
+    if (userDetails && userDetails.length > 0) {
+      const emailObj = lodash.filter(userDetails[0].Attributes, [
+        'Name',
+        'email',
+      ]);
+      const nameObj = lodash.filter(userDetails[0].Attributes, [
+        'Name',
+        'name',
+      ]);
+      const phoneNumberObj = lodash.filter(userDetails[0].Attributes, [
+        'Name',
+        'phone_number',
+      ]);
+
+      if (emailObj.length > 0) {
+        email = emailObj[0].Value;
+      }
+      if (phoneNumberObj.length > 0) {
+        phoneNumber = phoneNumberObj[0].Value;
+      }
+      if (nameObj.length > 0) {
+        name = nameObj[0].Value;
+      }
+      const userExists = await database.users.findOne({
+        where: {
+          email
+        }
+      }).catch(error => {
+        const err = ErrorCodes['900000'];
+        throw err;
+      })
+      if (userExists) {
+        const err = ErrorCodes['900000'];
+        throw err;
+      }
+
+      const userGroups = await this.getUserGroups(email, body.company_id).catch((err) => { throw err; });
+      if (userGroups && userGroups.length > 0) {
+        let adminGroup = userGroups.filter(element => element.GroupName == 'Admin-Salus')
+        if (!(adminGroup && adminGroup.length > 0)) {
+          const err = ErrorCodes['900013'];
+          throw err;
+        } else {
+          const adminUser = await this.getUserByEmail(process.env.ADMIN_EMAIL).catch(err => {
+            throw err
+          });
+          const Day = process.env.USER_EXPIRE_AFTER_DAYS;
+          const expiryDate = new Date(Date.now() + Day * 24 * 60 * 60 * 1000);
+          const invite = await database.user_invitations.create({
+            email: email,
+            created_by: adminUser.email,
+            updated_by: adminUser.email,
+            status: UserInvitationStatus.CONFIRMED,
+            expires_at: expiryDate,
+            initial_permissions: {},
+            company_id: body.company_id,
+          }).catch((err) => {
+            throw (err);
+          });
+
+          const user = await database.users.create({
+            cognito_id: body.cognito_id,
+            company_id: body.company_id,
+            invite_id: invite.id,
+            email,
+            phone_number: phoneNumber,
+            name,
+            identity_id: body.identity_id || null,
+          }).catch((error) => {
+            const err = ErrorCodes['900000'];
+            throw err;
+          });
+          const obj = {
+            old: {},
+            new: user,
+          };
+          ActivityLogs.addActivityLog(Entities.users.entity_name, Entities.users.event_name.added,
+            obj, Entities.notes.event_name.added, user.id, body.company_id, user.id, null, null, source_IP)
+          return user;
+        }
+      } else {
+        const err = ErrorCodes['900013'];
+        throw err;
+      }
+    } else {
+      const err = ErrorCodes['900001'];
+      throw err;
+    }
   }
 
   static async addUser(body, invitation) {
@@ -438,14 +592,14 @@ class UsersService {
           new: InviterObj,
         };
         ActivityLogs.addActivityLog(Entities.users.entity_name, Entities.users.event_name.inviteUserRegistered,
-          obj, Entities.notes.event_name.added, user.id, body.company_id, inviterUserObj.id, null);
+          obj, Entities.notes.event_name.added, user.id, body.company_id, inviterUserObj.id, null, null, source_IP);
       }
       const obj = {
         old: {},
         new: user,
       };
       ActivityLogs.addActivityLog(Entities.users.entity_name, Entities.users.event_name.added,
-        obj, Entities.notes.event_name.added, user.id, body.company_id, user.id, null);
+        obj, Entities.notes.event_name.added, user.id, body.company_id, user.id, null, null, source_IP);
       return user;
     }
     const err = ErrorCodes['900001'];
@@ -527,7 +681,7 @@ class UsersService {
       }
       jobObj.message = Responses.responses.user_delete_job_message;
       ActivityLogs.addActivityLog(Entities.users.entity_name, Entities.users.event_name.delete_job,
-        Obj, Entities.notes.event_name.added, userId, companyId, userId, null);
+        Obj, Entities.notes.event_name.added, userId, companyId, userId, null, null, req.source_IP);
       return (jobObj);
     }
     return null;
@@ -603,7 +757,7 @@ class UsersService {
           };
           if (JSON.stringify(oldObj) != JSON.stringify(userUpdateObj)) {
             ActivityLogs.addActivityLog(Entities.user_attributes.entity_name, Entities.user_attributes.event_name.attribute_updated,
-              updated_obj, Entities.notes.event_name.updated, entity_id, companyId, req.user_id, null);
+              updated_obj, Entities.notes.event_name.updated, entity_id, companyId, req.user_id, null, null, req.source_IP);
           }
         }
         resolve(null);
@@ -654,7 +808,7 @@ class UsersService {
     };
     if (JSON.stringify(oldObj.isAdmin) != JSON.stringify(updatedValues.isAdmin)) {
       ActivityLogs.addActivityLog(Entities.users.entity_name, Entities.users.event_name.admin_status_updated,
-        obj, Entities.notes.event_name.updated, req.params.id, req.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, req.params.id, req.company_id, req.user_id, null, null, req.source_IP);
     }
     return updateCompanies;
   }

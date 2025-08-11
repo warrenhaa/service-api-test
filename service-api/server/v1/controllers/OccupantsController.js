@@ -4,7 +4,6 @@ import ApplicationError from '../../errors/ApplicationError';
 import ErrorCodes from '../../errors/ErrorCodes';
 import OccupantDeviceAlertsService from '../services/OccupantDeviceAlertsService';
 import OccupantRegisterService from '../services/OccupantRegisterService';
-
 const util = new Util();
 
 class OccupantsController {
@@ -86,8 +85,10 @@ class OccupantsController {
   }
 
   static async addOccupants(req, res) {
+    //console.log("🚀 ~ file: occupantsController.js:100 ~ occupantsController ~ addOccupants ~ req:", req.body)
     const occupants = await OccupantService.addOccupants(req)
       .then(async (result) => result).catch((e) => {
+        //add to queue
         const err = e;
         throw new ApplicationError(err);
       });
@@ -153,19 +154,31 @@ class OccupantsController {
 
   static async getOccupantSliderList(req, res) {
     const { occupant_id, company_id } = req;
-    const occupantDashboard = await OccupantService.getOccupantSliderList(occupant_id, company_id)
+    if(process.env.ALLOW_WITHOUT_OCCUPANT != true &&  process.env.ALLOW_WITHOUT_OCCUPANT != "true"){
+      const occupantDashboard = await OccupantService.getOccupantSliderList(occupant_id, company_id)
       .then(async (result) => result).catch((err) => {
         throw new ApplicationError(err);
       });
-
-    util.setSuccess(200, occupantDashboard);
+      util.setSuccess(200, occupantDashboard);
+    }else{
+      util.setSuccess(200, []);
+    }
+   
     return util.send(req, res);
   }
 
   static async getOccupantSliderDetails(req, res) {
     const { occupant_id, company_id } = req;
+    const { isAdmin } = req.header;
+
     const { id, type, gateway_code, req_occupant_id } = req.query;
     const { identity_id } = req;
+
+    if(!type && isAdmin == true)
+    {
+      type = 'admin';
+    }
+
     if (type == 'gateway') {
       const occupantHomeGatewayDetails = await OccupantService.getSliderGatewayDetails(id, occupant_id, company_id)
         .then(async (result) => result).catch((err) => {
@@ -186,7 +199,7 @@ class OccupantsController {
         });
       util.setSuccess(200, occupantHomeSharedLocationDetails);
     } else if (type == 'camera_dashboard') {
-      // id here is occupant_id 
+      // id here is occupant_id
       const occupantHomeCameraDetails = await OccupantService.getSliderCameraDetails(id, company_id)
         .then(async (result) => result).catch((err) => {
           throw new ApplicationError(err);
@@ -308,6 +321,18 @@ class OccupantsController {
   static async passwordReset(req, res) {
     const { email, company_id } = req.body;
     const attributes = await OccupantRegisterService.passwordReset(email, company_id)
+      .then((result) => result).catch((e) => {
+        const err = e;
+        throw (err);
+      });
+    util.setSuccess(200, attributes);
+    return util.send(req, res);
+  }
+
+  static async passwordChanged(req, res) {
+    const { company_id } = req.body;
+    const { email} = req.headers
+    const attributes = await OccupantRegisterService.passwordChanged(email, company_id)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);

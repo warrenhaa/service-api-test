@@ -21,7 +21,7 @@ class AdressesService {
       new: address,
     };
     ActivityLogs.addActivityLog(Entities.addresses.entity_name, Entities.addresses.event_name.added,
-      obj, Entities.notes.event_name.added, address.id, body.company_id, req.user_id, null);
+      obj, Entities.notes.event_name.added, address.id, body.company_id, req.user_id, null, null, req.source_IP);
     return address;
   }
 
@@ -62,7 +62,7 @@ class AdressesService {
         new: newObj,
       };
       ActivityLogs.addActivityLog(Entities.addresses.entity_name, Entities.addresses.event_name.updated,
-        obj, Entities.notes.event_name.updated, id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.updated, id, body.company_id, req.user_id, null, null, req.source_IP);
       return updateAddress;
     }
     return null;
@@ -80,7 +80,7 @@ class AdressesService {
         new: {},
       };
       ActivityLogs.addActivityLog(Entities.addresses.entity_name, Entities.addresses.event_name.deleted,
-        obj, Entities.notes.event_name.deleted, id, body.company_id, req.user_id, null);
+        obj, Entities.notes.event_name.deleted, id, body.company_id, req.user_id, null, null, req.source_IP);
       return deleteAddress;
     }
     return null;

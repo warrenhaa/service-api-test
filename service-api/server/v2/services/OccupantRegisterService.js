@@ -15,6 +15,7 @@ import { getCompany } from '../../cache/Companies';
 import Logger from '../../utils/Logger';
 import { getAWSDetailsFromCompanyId, createAWSCredentialPath } from '../helpers/AwsCredentials';
 import { DPCommands } from '../../utils/constants/DeviceProvisionCommands';
+import { getOneFromCache, setInCacheByKey } from '../../cache/Cache';
 
 const AmazonCognitoIdentity = require('amazon-cognito-identity-js');
 
@@ -364,6 +365,29 @@ class OccupantRegisterService {
     }
   }
 
+  static async passwordChanged(email, company_id) {
+    try {
+      const AwsConstants = await getAWSDetailsFromCompanyId(company_id);
+
+      const adminGetUserParams = {
+        UserPoolId: AwsConstants.userPoolId,
+        Username: email,
+      };
+
+      await cognitoidentityserviceprovider.adminUserGlobalSignOut(adminGetUserParams).promise();
+      const jwtExpired = process.env.JWT_EXPIRED;
+      if (jwtExpired) {
+        await setInCacheByKey('jwt_reset_password:'+email, adminGetUserParams, parseInt(jwtExpired))
+          .then(async (result) => {})
+          .catch((error) => {
+            console.log(error);
+          });
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
   static async passwordReset( email, company_id) {
       const AwsConstants = await getAWSDetailsFromCompanyId(company_id);
       AWS.config.update({
@@ -383,6 +407,23 @@ class OccupantRegisterService {
         Pool: userPool
       };
       var cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+      let isConfirmed = true
+      const adminGetUserParams = {
+        UserPoolId: AwsConstants.userPoolId, // Replace with your User Pool ID
+        Username: email,
+      };
+      try {
+        const response = await cognitoidentityserviceprovider.adminGetUser(adminGetUserParams).promise();
+        if(response ){
+           isConfirmed = response.UserStatus === "CONFIRMED";
+        }
+      } catch (error) {       
+      }
+  
+      if(isConfirmed == false){
+        const err = ErrorCodes['160048'];
+        throw err;
+      }
 
     var params = {
       ClientId: AwsConstants.aws_cognito_userpool_web_client_id,

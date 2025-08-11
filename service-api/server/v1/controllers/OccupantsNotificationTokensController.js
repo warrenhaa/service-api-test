@@ -21,7 +21,8 @@ class OccupantsNotificationTokensController {
     const { body } = req;
     const { company_id } = req.body;
     const { occupant_id } = req;
-    const occupants = await OccupantsNotificationTokensService.addOccupantsNotificationTokens(body, company_id, occupant_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsNotificationTokensService.addOccupantsNotificationTokens(body, company_id, occupant_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -35,7 +36,8 @@ class OccupantsNotificationTokensController {
     const { body } = req;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsNotificationTokensService.updateOccupantsNotificationTokens(id, body, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsNotificationTokensService.updateOccupantsNotificationTokens(id, body, occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -48,7 +50,8 @@ class OccupantsNotificationTokensController {
     const { token } = req.query;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsNotificationTokensService.deleteOccupantsNotificationTokens(token, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsNotificationTokensService.deleteOccupantsNotificationTokens(token, occupant_id, company_id,source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);

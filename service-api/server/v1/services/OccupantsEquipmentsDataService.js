@@ -46,7 +46,7 @@ class OccupantsEquipmentsDataService {
     return { "token_data": notificationTokens, "equipment_data": equipmentsData };
   }
 
-  static async addOccupantsEquipmentsData(body, companyid, occupant_id) {
+  static async addOccupantsEquipmentsData(body, companyid, occupant_id, source_IP) {
     if (body.type == 'camera') {
       const camera = await database.camera_devices.findOne({
         where: {
@@ -140,7 +140,7 @@ class OccupantsEquipmentsDataService {
       if (addEquipmentsData) {
         ActivityLogs.addActivityLog(Entities.occupants_equipments_data.entity_name,
           Entities.occupants_equipments_data.event_name.added,
-          Obj, Entities.notes.event_name.added, occupant_id, companyid, null, occupant_id, null);
+          Obj, Entities.notes.event_name.added, occupant_id, companyid, null, occupant_id, null, source_IP);
       }
     } else {
       addEquipmentsData = await database.occupants_equipments_data.update({
@@ -164,13 +164,13 @@ class OccupantsEquipmentsDataService {
       if (addEquipmentsData) {
         ActivityLogs.addActivityLog(Entities.occupants_equipments_data.entity_name,
           Entities.occupants_equipments_data.event_name.updated,
-          Obj, Entities.notes.event_name.updated, occupant_id, companyid, null, occupant_id, null);
+          Obj, Entities.notes.event_name.updated, occupant_id, companyid, null, occupant_id, null, source_IP);
       }
     }
     return addEquipmentsData;
   }
 
-  static async deleteOccupantsEquipmentsData(id, occupant_id, companyId) {
+  static async deleteOccupantsEquipmentsData(id, occupant_id, companyId, source_IP) {
     const deleteEquipmentsData = await database.occupants_equipments_data.findOne({
       where: { id },
     });
@@ -190,7 +190,7 @@ class OccupantsEquipmentsDataService {
       new: {},
     };
     ActivityLogs.addActivityLog(Entities.occupants_equipments_data.entity_name, Entities.occupants_equipments_data.event_name.deleted,
-      obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, null);
+      obj, Entities.notes.event_name.deleted, occupant_id, companyId, null, occupant_id, null, source_IP);
     return deletedData;
   }
 }

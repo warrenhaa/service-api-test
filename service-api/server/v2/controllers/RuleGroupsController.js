@@ -19,8 +19,10 @@ class RuleGroupsController {
   static async getAllRuleGroups(req, res) {
     const { gateway_id, networkwifimac, gateway_code } = req.query;
     const { company_id } = req.body;
-    const { occupant_id, user_id } = req;
-    const ruleGroupsObj = await RuleGroupsService.getAllRuleGroups(gateway_id, company_id, networkwifimac, occupant_id, user_id, gateway_code)
+    const { occupant_id, user_id,identity_id } = req;
+    const { isAdmin } = req.header;
+    const { email } = req.headers;
+    const ruleGroupsObj = await RuleGroupsService.getAllRuleGroups(gateway_id, company_id, networkwifimac, occupant_id, user_id, gateway_code, isAdmin, identity_id)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -31,11 +33,13 @@ class RuleGroupsController {
 
   static async addRuleGroups(req, res) {
     const {
-      name, icon, rules, gateway_id, company_id, is_enable,
+      name, icon, rules, gateway_id,gateway_code, company_id, is_enable,
     } = req.body;
     const { occupant_id } = req;
-    const { user_id } = req;
-    const ruleGroupsObj = await RuleGroupsService.addRuleGroups(name, icon, rules, gateway_id, company_id, user_id, occupant_id, is_enable)
+    const { user_id,identity_id } = req;
+    const source_IP = req.source_IP;
+    const {email } = req.headers;
+    const ruleGroupsObj = await RuleGroupsService.addRuleGroups(name, icon, rules, gateway_id, company_id, user_id, occupant_id, is_enable, source_IP,gateway_code,identity_id)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -47,7 +51,8 @@ class RuleGroupsController {
   static async updateRuleGroups(req, res) {
     const { body } = req;
     const { user_id, occupant_id } = req;
-    const ruleGroupsObj = await RuleGroupsService.updateRuleGroups(body, user_id, occupant_id)
+    const source_IP = req.source_IP;
+    const ruleGroupsObj = await RuleGroupsService.updateRuleGroups(body, user_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -60,7 +65,8 @@ class RuleGroupsController {
     const { rule_group_id } = req.query;
     const { company_id } = req.body;
     const { user_id, occupant_id } = req;
-    const ruleGroupsObj = await RuleGroupsService.deleteRuleGroups(rule_group_id, company_id, user_id, occupant_id)
+    const source_IP = req.source_IP;
+    const ruleGroupsObj = await RuleGroupsService.deleteRuleGroups(rule_group_id, company_id, user_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);

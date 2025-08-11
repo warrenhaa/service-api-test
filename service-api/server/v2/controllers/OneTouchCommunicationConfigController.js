@@ -21,7 +21,8 @@ class OneTouchCommunicationConfigController {
     } = req.body;
     const { company_id } = req;
     const { occupant_id } = req;
-    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.addOneTouchCommunicationConfig(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, company_id, occupant_id)
+    const source_IP = req.source_IP;
+    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.addOneTouchCommunicationConfig(one_touch_rule_id, action_trigger_key, emails, phone_numbers, message, company_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         throw (e);
       });
@@ -34,7 +35,8 @@ class OneTouchCommunicationConfigController {
     const { company_id } = req.body;
     const { body } = req;
     const { occupant_id } = req;
-    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.updateOneTouchCommunicationConfig(id, body, company_id, occupant_id)
+    const source_IP = req.source_IP;
+    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.updateOneTouchCommunicationConfig(id, body, company_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         throw (e);
       });
@@ -46,7 +48,8 @@ class OneTouchCommunicationConfigController {
     const { one_touch_config_id } = req.query;
     const { company_id } = req.body;
     const { occupant_id } = req;
-    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.deleteOneTouchCommunicationConfig(one_touch_config_id, company_id, occupant_id)
+    const source_IP = req.source_IP;
+    const onetouchCommunicationConfigObj = await OneTouchCommunicationConfigService.deleteOneTouchCommunicationConfig(one_touch_config_id, company_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         throw (e);
       });

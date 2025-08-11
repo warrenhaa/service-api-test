@@ -22,7 +22,8 @@ class OccupantsDashboardAttributesController {
     const { body } = req;
     const { company_id } = req.body;
     const { occupant_id } = req;
-    const occupants = await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(body, company_id, occupant_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsDashboardAttributesService.AddorUpdateOccupantsDashboardAttributes(body, company_id, occupant_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -36,7 +37,8 @@ class OccupantsDashboardAttributesController {
     const { id } = body;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsDashboardAttributesService.updateOccupantsDashboardAttributes(id, body, occupant_id, company_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsDashboardAttributesService.updateOccupantsDashboardAttributes(id, body, occupant_id, company_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);
@@ -49,7 +51,8 @@ class OccupantsDashboardAttributesController {
     const { id , item_id} = req.query;
     const { occupant_id } = req;
     const { company_id } = req.body;
-    const occupants = await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(id, occupant_id, company_id, item_id)
+    const source_IP = req.source_IP;
+    const occupants = await OccupantsDashboardAttributesService.deleteOccupantsDashboardAttributes(id, occupant_id, company_id, item_id, source_IP)
       .then(async (result) => result).catch((e) => {
         const err = e;
         throw new ApplicationError(err);

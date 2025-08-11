@@ -36,9 +36,12 @@ export default class Util {
 
   sendError(req, res, error) {
     const { request_id } = req;
-    const code = error.statusCode;
-
-    const responceObj = { request_id, code, message: error.message };
+    const code = error.statusCode || 500;
+    const type = error.type || "UleecoServerError";
+    const responceObj = { request_id, code, message: error.message, type };
+    if (error.responseCode == '440000') {
+      delete error.stack;
+    }
     if (error.responseCode) {
       res.setHeader('x-response-code', error.responseCode);
       responceObj.response_code = error.responseCode;

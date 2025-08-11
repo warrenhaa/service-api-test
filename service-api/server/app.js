@@ -7,20 +7,41 @@ import bodyParser from 'body-parser';
 import expressWinston from 'express-winston';
 import v1router from './v1/routes';
 import v2router from './v2/routes';
+import { rateLimit } from 'express-rate-limit'
+import redisClient from './cache/redisClient';
+import { RedisStore } from 'rate-limit-redis'
+
 import GitlabTicketService from './v1/services/GitlabTicketService';
 const cors = require('cors');
 const winston = require('winston');
 const uuid = require('uuid').v4;
-
 const { format } = winston;
-require('apminsight')({
-  licenseKey: process.env.APMINSIGHT_LICENSE_KEY,
-  appName: process.env.APMINSIGHT_APP_NAME,
-  port: process.env.APMINSIGHT_APP_PORT,
-});
+import apminsight from 'apminsight';
+
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minutes
+  limit: process.env.RATE_LIMITER || 2000, // Limit each IP to 120 requests per `window` (here, per 1 minutes).
+  standardHeaders: 'draft-7', // draft-6: `RateLimit-*` headers; draft-7: combined `RateLimit` header
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+  store: new RedisStore({
+    sendCommand: (...args) => redisClient.call(...args),
+  }),
+})
+
+// require('apminsight')({
+//   licenseKey: process.env.APMINSIGHT_LICENSE_KEY,
+//   appName: process.env.APMINSIGHT_APP_NAME,
+//   port: process.env.APMINSIGHT_APP_PORT,
+// });
+
+// apminsight.config({
+//   licenseKey: process.env.APMINSIGHT_LICENSE_KEY,
+//   appName: process.env.APMINSIGHT_APP_NAME,
+//   port: process.env.APMINSIGHT_APP_PORT,
+// }
+// );
 
 const { UI } = require('bull-board');
-
 const port = process.env.PORT || 3000;
 const app = express();
 
@@ -123,11 +144,13 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.get('/version', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.status(200).json({
-    version: "v.0.79.0"
+    version: "v.0.88.0"
   });
 });
-app.use('/api/v1', v1router);
-app.use('/api/v2', v2router);
+app.use('/api/v1', limiter, v1router);
+app.use('/api/v2', limiter, v2router);
+// app.use('/api/v1', v1router);
+// app.use('/api/v2', v2router);
 app.use(expressWinston.errorLogger({
   transports: [
     new (winston.transports.File)({
@@ -174,7 +197,7 @@ app.use(expressWinston.errorLogger({
             params["search"] = obj.meta.error?.message || "UleecoServerError"
             params["title"] = obj.meta.error?.message || "UleecoServerError"
             params["description"] = '```json' + JSON.stringify(data, null, 2) + '```'
-            params["labels"] = [company_code, obj.meta.error?.statusCode.toString(), obj.meta?.error?.responseCode.toString(), obj.meta?.error?.type]
+            params["labels"] = [company_code, obj.meta.error?.statusCode?.toString(), obj.meta?.error?.responseCode?.toString(), obj.meta?.error?.type]
             if (obj.meta.req?.headers.email) {
               delete obj.meta.req?.headers.email;
             }
@@ -202,7 +225,7 @@ app.use(expressWinston.errorLogger({
             params["search"] = obj.meta.error?.message || "UleecoClientError"
             params["title"] = obj.meta.error?.message || "UleecoClientError"
             params["description"] = '```json' + JSON.stringify(data, null, 2) + '```'
-            params["labels"] = [company_code, obj.meta.error?.statusCode.toString(), obj.meta?.error?.responseCode.toString(), obj.meta?.error?.type]
+            params["labels"] = [company_code, obj.meta.error?.statusCode?.toString(), obj.meta?.error?.responseCode?.toString(), obj.meta?.error?.type]
             if (obj.meta.req?.headers.email) {
               delete obj.meta.req?.headers.email;
             }

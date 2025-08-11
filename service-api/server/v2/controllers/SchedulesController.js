@@ -24,6 +24,8 @@ class SchedulesController {
     const { occupant_id, user_id } = req;
     const { euid } = req.query;
     const { company_id } = req.body;
+    const { isAdmin } = req.header;
+
     let getMac = null;
     let where = null;
     let getDevice = null;
@@ -54,7 +56,7 @@ class SchedulesController {
         }
       }
     }
-    const schedulesObj = await SchedulesService.getAllSchedules(device_id, company_id, occupant_id, user_id, device_code)
+    const schedulesObj = await SchedulesService.getAllSchedules(device_id, company_id, occupant_id, user_id, device_code, isAdmin)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -87,7 +89,8 @@ class SchedulesController {
     if (networkwifimac) {
       networkwifimac = networkwifimac.toUpperCase();
     }
-    const schedulesObj = await SchedulesService.addSchedules(schedules, device_id, company_id, user_id, occupant_id, euid, networkwifimac)
+    const source_IP = req.source_IP;
+    const schedulesObj = await SchedulesService.addSchedules(schedules, device_id, company_id, user_id, occupant_id, euid, networkwifimac, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -105,7 +108,8 @@ class SchedulesController {
     if (networkwifimac) {
       networkwifimac = networkwifimac.toUpperCase();
     }
-    const schedulesObj = await SchedulesService.updateSchedules(schedules, device_id, euid, user_id, occupant_id, company_id, networkwifimac)
+    const source_IP = req.source_IP;
+    const schedulesObj = await SchedulesService.updateSchedules(schedules, device_id, euid, user_id, occupant_id, company_id, networkwifimac, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -117,7 +121,8 @@ class SchedulesController {
   static async updateDuplicateSchedules(req, res) {
     const { from_device_id, to_device_ids, company_id } = req.body;
     const { user_id, occupant_id } = req;
-    const schedulesObj = await SchedulesService.updateDuplicateSchedules(from_device_id, to_device_ids, user_id, occupant_id, company_id, "schedule")
+    const source_IP = req.source_IP;
+    const schedulesObj = await SchedulesService.updateDuplicateSchedules(from_device_id, to_device_ids, user_id, occupant_id, company_id, "schedule", source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -143,7 +148,8 @@ class SchedulesController {
     const { id } = req.params;
     const { company_id } = req.body;
     const { user_id, occupant_id } = req;
-    const schedulesObj = await SchedulesService.deleteSchedules(id, company_id, user_id, occupant_id)
+    const source_IP = req.source_IP;
+    const schedulesObj = await SchedulesService.deleteSchedules(id, company_id, user_id, occupant_id, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);
@@ -160,6 +166,7 @@ class SchedulesController {
     let getMac = null;
     let where = null;
     let getDevice = null;
+    const source_IP = req.source_IP;
     if (networkwifimac) {
       networkwifimac = networkwifimac.toUpperCase();
     }
@@ -188,7 +195,7 @@ class SchedulesController {
       }
     }
     const isToPublish = false;
-    const schedulesObj = await SchedulesService.deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish)
+    const schedulesObj = await SchedulesService.deleteAllSchedules(device_id, company_id, user_id, occupant_id, isToPublish, source_IP)
       .then((result) => result).catch((e) => {
         const err = e;
         throw (err);

@@ -91,6 +91,18 @@ const getConnectionHistory = () => [
   query('limit', 'invalid value for limit').optional().isInt(),
   query('order', 'invalid value for order').optional().isString(),
 ];
+const getKibanaConnectionHistory = () => [
+  query('device_code', 'device_code missing').exists().isString().not().isEmpty(),
+  query('property_name', 'property_name missing').exists().isString().not().isEmpty(),
+  query('property_value', 'property_value missing').optional().not().isEmpty(),
+  query('start_date', 'start_date missing').exists().not().isEmpty(),
+  query('start_date', 'invalid start_date').matches(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?([+-]\d{2}:\d{2})?$/),
+  query('end_date', 'end_date missing').exists().not().isEmpty(),
+  query('end_date', 'invalid end_date').matches(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?([+-]\d{2}:\d{2})?$/),
+  query('page', 'invalid value for page').optional().isInt(),
+  query('limit', 'invalid value for limit').optional().isInt(),
+  query('order', 'invalid value for order').optional().isString(),
+];
 const getUserAnalytics = () => [
   query('device_code', 'device_code missing').exists().isString().not().isEmpty(),
   query('start_date', 'start_date missing').exists().not().isEmpty(),
@@ -104,6 +116,13 @@ const deleteGatewayRules = () => [
     .isUUID(),
   query('command', 'command is missing').optional().isInt(),
 ];
+
+const changeOwnerRules = () => [
+  body('gateway_id', 'gateway_id missing').exists().not().isEmpty()
+    .isUUID(),
+    body('email', 'email is missing').exists().isEmail(),
+];
+
 
 const checkGatewayExistRules = () => [
   oneOf( // <-- one of the following must exist
@@ -207,13 +226,25 @@ const validateArrayUUID = function (req, res, next) {
   return next();
 };
 
+const pincodeDetails= () => [
+  query('pincode', 'pincode missing').exists(),
+];
+
+const gatewaySettings = () => [
+  body('gateway_id', 'gateway_id is missing').exists().isString().not().isEmpty(),
+  body( 'global_time_format_24_hour', 'global_time_format_24_hour missing').exists().isBoolean().isNumeric()
+ 
+];
+
 const validateUUID = () => [
   body('id').isUUID(),
 ];
+
 
 export {
   createDeviceRules, DeviceValidation, validateArrayUUID, validateUUID,
   createBulkDeviceRules, updateBulkDeviceRules, getConnectionHistory, deleteGatewayRules,
   deleteDeviceRules, checkGatewayExistRules, UploadFileCheck, SchedulesUploadFileCheck, gatewayCameraLink,
-  gatewayCameraList, gatewayCameraPlanLink, categoryAddRules, localCloudSyncupRules, getUserAnalytics, getDeviceShadows
+  gatewayCameraList, gatewayCameraPlanLink, categoryAddRules, localCloudSyncupRules, getUserAnalytics, getDeviceShadows,changeOwnerRules
+  ,getKibanaConnectionHistory,pincodeDetails,gatewaySettings
 };

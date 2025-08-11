@@ -25,14 +25,14 @@ class OneTouchCbCommunicationConfigService {
       throw err;
     }
     const oneTouchCbCommunicationConfig = await
-    database.one_touch_cb_communication_configs.findAll({
-      where: { gateway_code },
-      raw: true,
-    }).then((result) => result)
-      .catch(() => {
-        const err = ErrorCodes['330017'];
-        throw err;
-      });
+      database.one_touch_cb_communication_configs.findAll({
+        where: { gateway_code },
+        raw: true,
+      }).then((result) => result)
+        .catch(() => {
+          const err = ErrorCodes['330017'];
+          throw err;
+        });
     let arrayIds = [];
     if (oneTouchCbCommunicationConfig && oneTouchCbCommunicationConfig.length > 0) {
       arrayIds = lodash.map(oneTouchCbCommunicationConfig, 'array_id');
@@ -51,7 +51,7 @@ class OneTouchCbCommunicationConfigService {
   }
 
   static async addCbConfigs(gateway_code, config_type, camera_id, array_id, property_name,
-    property_value, ruleop, device_code, occupant_id, company_id, user_id, one_touch_rule_id) {
+    property_value, ruleop, device_code, occupant_id, company_id, user_id, one_touch_rule_id, source_IP) {
     const gateway = await database.devices.findOne({
       where: { device_code: gateway_code },
       raw: true,
@@ -77,10 +77,45 @@ class OneTouchCbCommunicationConfigService {
           occupant_id,
         },
         raw: true,
-      }).then((result) => result);
+      }).then((result) => result)
+        .catch(error => {
+          const err = ErrorCodes['460000'];
+          throw err;
+        });
+
       if (!camera) {
-        const err = ErrorCodes['460000'];
-        throw err;
+        const cameraDevice = await database.camera_devices.findOne({
+          where: {
+            camera_id,
+          },
+          raw: true,
+        }).then((result) => result).catch(error => {
+          const err = ErrorCodes['460000'];
+          throw err;
+        });
+        if (!cameraDevice) {
+          const err = ErrorCodes['460000'];
+          throw err;
+        }
+        const cameraPermissions = await database.occupants_permissions.findOne({
+          include: [
+            {
+              model: database.occupants_camera_permissions,
+              where: {
+                camera_device_id: cameraDevice.id,
+              }
+            },
+          ],
+          where: {
+            receiver_occupant_id: occupant_id,
+          },
+        }).then((result) => result).catch((err) => {
+          throw err;
+        });
+        if (!cameraPermissions) {
+          const err = ErrorCodes['460000'];
+          throw err;
+        }
       }
     }
     const oneTouchCbConfigs = await database.one_touch_cb_communication_configs.findOne({
@@ -107,23 +142,23 @@ class OneTouchCbCommunicationConfigService {
         throw err;
       }
       const oneTouchCbCommunicationConfig = await
-      database.one_touch_cb_communication_configs.create({
-        gateway_code,
-        device_code,
-        config_type,
-        camera_id,
-        array_id,
-        occupant_id,
-        property_name,
-        property_value,
-        ruleop,
-        one_touch_rule_id,
-      }).then((result) => result)
-        .catch((e) => {
-          console.log("🚀 ~ file: OneTouchCbCommunicationConfigService.js:122 ~ OneTouchCbCommunicationConfigService ~ e:", e)
-          const err = ErrorCodes['330019'];
-          throw err;
-        });
+        database.one_touch_cb_communication_configs.create({
+          gateway_code,
+          device_code,
+          config_type,
+          camera_id,
+          array_id,
+          occupant_id,
+          property_name,
+          property_value,
+          ruleop,
+          one_touch_rule_id,
+        }).then((result) => result)
+          .catch((e) => {
+            console.log("🚀 ~ file: OneTouchCbCommunicationConfigService.js:122 ~ OneTouchCbCommunicationConfigService ~ e:", e)
+            const err = ErrorCodes['330019'];
+            throw err;
+          });
       const obj = {
         new: oneTouchCbCommunicationConfig,
         old: {},
@@ -132,7 +167,7 @@ class OneTouchCbCommunicationConfigService {
       ActivityLogs.addActivityLog(Entities.one_touch_rules.entity_name,
         Entities.one_touch_rules.event_name.cbAdded, obj, Entities.notes.event_name.added,
         one_touch_rule_id,
-        company_id, user_id, occupant_id, placeholdersData);
+        company_id, user_id, occupant_id, placeholdersData, source_IP);
       console.log("🚀 ~ file: OneTouchCbCommunicationConfigService.js:121 ~ OneTouchCbCommunicationConfigService ~ oneTouchCbCommunicationConfig:", oneTouchCbCommunicationConfig)
       return oneTouchCbCommunicationConfig;
     }

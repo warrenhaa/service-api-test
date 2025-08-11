@@ -2,7 +2,7 @@ import express from 'express';
 import UserController from '../controllers/UserController';
 import { validation } from '../middlewares/validations/Validator';
 import {
-  userBodyRule, userCreateRule, userIdRule, userDeleteValidation, loginBodyRule,
+  userBodyRule, userCreateRule, userIdRule, userDeleteValidation, loginBodyRule, userAdminCreateRule
 } from '../middlewares/validations/Users';
 import getCompanyIdFromCode from '../middlewares/CompaniesFromCode';
 import asyncErrorHandler from '../middlewares/AsyncErrorHandler';
@@ -22,6 +22,7 @@ router.get('/users_location', authVerification, verifyCompanyCode, verifyUser, g
 router.get('/company', authVerification, verifyCompanyCode, verifyUser, getCompanyIdFromCode, UserController.getAllUsersOfACompany);
 router.get('/user_cognito', authVerification, verifyCompanyCode, verifyUserOrOccupant, userBodyRule(), validation, getCompanyIdFromCode, asyncErrorHandler(UserController.getUserFromCognitoId));
 router.post('/create_user', authVerification, verifyCompanyCode, userCreateRule(), validation, asyncErrorHandler(UserController.createUser));
+router.post('/create_admin_user', authVerification, verifyCompanyCode, userAdminCreateRule(), validation, asyncErrorHandler(UserController.createAdminUser));
 router.post('/login', verifyCompanyCode, loginBodyRule(), validation, getCompanyIdFromCode, asyncErrorHandler(UserController.login));
 router.delete('/:id', authVerification, verifyCompanyCode, verifyUser, userDeleteValidation(), validation, getCompanyIdFromCode, asyncErrorHandler(UserController.deleteUser));
 router.get('/dt_preference/:id', authVerification, verifyCompanyCode, verifyUser, userIdRule(), validation, asyncErrorHandler(UserController.getDataTablePreferences));
