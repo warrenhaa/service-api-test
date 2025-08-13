@@ -28,7 +28,7 @@
     "test-awesome-coverage": "nyc --reporter=html mocha --reporter mochawesome --exit || true",
     "start": "npm run prod",
     "build": "npm-run-all clean transpile  && cp -r ./server/docs ./dist-server/docs/",
-    "server": "node --max-old-space-size=1508 ./dist-server/app",
+    "server": "node --max-old-space-size=1508 --prof ./dist-server/app",
     "dev": "NODE_ENV=development npm-run-all build server",
     "prod": "NODE_ENV=production npm-run-all build server",
     "transpile": "babel ./server --out-dir dist-server",
