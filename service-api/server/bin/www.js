@@ -62,10 +62,14 @@ function onError(error) {
   // handle specific listen errors with friendly messages
   switch (error.code) {
     case 'EACCES':
-      process.exit(1);
+      //process.exit(1);
+      console.info("process.exit start:"+error.code)
       break;
     case 'EADDRINUSE':
-      process.exit(1);
+      //process.exit(1);
+      console.info("process.exit start:"+error.code)
+      break;
+      console.info(error.code)
       break;
     default:
       throw error;
