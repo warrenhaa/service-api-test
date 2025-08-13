@@ -26,6 +26,9 @@ const limiter = rateLimit({
   store: new RedisStore({
     sendCommand: (...args) => redisClient.call(...args),
   }),
+  onLimitReached: (req, res, options) => {
+    console.log(`Rate limit reached for IP: ${req.ip}`); 
+  }
 })
 
 // require('apminsight')({
