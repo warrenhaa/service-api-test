@@ -27,7 +27,7 @@ const limiter = rateLimit({
     sendCommand: (...args) => redisClient.call(...args),
   }),
   onLimitReached: (req, res, options) => {
-    console.log(`Rate limit reached for IP: ${req.ip}`); 
+    console.info(`Rate limit reached for IP: ${req.ip}`); 
   }
 })
 
@@ -120,6 +120,7 @@ app.use(cors({ exposedHeaders: 'x-access-token' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use((req, res, next) => {
+  console.info(`Rate limit reached for IP: ${req.ip}`); 
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-auth-token, x-company-code, authorization,x-access-token');
   res.header('Access-Control-Allow-Methods', 'PUT, POST, GET, DELETE, OPTIONS, PATCH');
