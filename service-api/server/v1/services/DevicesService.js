@@ -4542,8 +4542,16 @@ class DevicesService {
         })
       }
     }
-    combinedObject = null
-    entries = null
+    for (const key in combinedObject) {
+      if (combinedObject.hasOwnProperty(key)) {
+        delete combinedObject[key];
+      }
+    }
+    for (const key in entries) {
+      if (entries.hasOwnProperty(key)) {
+        delete entries[key];
+      }
+    }
     return {
       success_list: successList,
       dont_have_permissions_list: dontHavePermissions,
