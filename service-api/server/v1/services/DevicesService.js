@@ -4524,11 +4524,13 @@ class DevicesService {
     }).catch(error => {
       throw error
     })
+    promiseList = null
     const combinedObject = {}; // Spread operator to copy mainObject
 
     shadows.forEach(obj => {
       Object.assign(combinedObject, obj);
     });
+    shadows = null
     const entries = Object.entries(combinedObject);
     for (const [key, value] of entries) {
       if (value == null) {
@@ -4540,12 +4542,19 @@ class DevicesService {
         })
       }
     }
+    combinedObject = null
+    entries = null
     return {
       success_list: successList,
       dont_have_permissions_list: dontHavePermissions,
       device_not_found_list: notFoundList,
       error_list: errorList
     };
+    device_codes = null
+    notFoundList = null
+    errorList = null
+    successList = null
+    dontHavePermissions = null
   }
 
   static async getAdminData(companyId) {
